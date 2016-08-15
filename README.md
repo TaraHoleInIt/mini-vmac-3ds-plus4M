@@ -8,12 +8,12 @@ Boots on real hardware
 Basic input using the DPAD/Circle Pad
 
 # TODO:
-Fix timing bug that locks the emulator
-Code cleanup
+Fix timing bug that locks the emulator  
+Code cleanup  
 
 # TODO (At some point):
-Sound
-Keyboard input
-Mouse via touchscreen
-User interface
+Sound  
+Keyboard input  
+Mouse via touchscreen  
+User interface  
 
