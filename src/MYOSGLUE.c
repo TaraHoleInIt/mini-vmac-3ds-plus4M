@@ -300,7 +300,7 @@ static int Video_CreateTexture( void ) {
     C3D_TexEnv* Env = NULL;
     
     C3D_TexInit( &FBTexture, 512, 512, GPU_RGB565 );
-    C3D_TexSetFilter( &FBTexture, GPU_LINEAR, GPU_LINEAR );
+    C3D_TexSetFilter( &FBTexture, GPU_NEAREST, GPU_NEAREST );
     
     Env = C3D_GetTexEnv( 0 );
     
@@ -1497,37 +1497,17 @@ u32 Keys_Up = 0;
 u32 Keys_Held = 0;
 
 /*
- * FIXME:
- *
- * This is broken because when at max range the deltas are 0
- * so when you release the CPAD the mouse just snaps back
+ * TODO:
+ * Read using analogue stick values.
  */
 LOCALFUNC blnr GetCPadDelta( int* DeltaX, int* DeltaY ) {
-    static circlePosition LastCP = {
-        0,
-        0
-    };
-    circlePosition CP;
+    if ( Keys_Held & KEY_CPAD_LEFT ) *DeltaX = -3;
+    if ( Keys_Held & KEY_CPAD_RIGHT ) *DeltaX = 3;
     
-    if ( ( Keys_Held & KEY_CPAD_LEFT ) || ( Keys_Held & KEY_CPAD_RIGHT ) ||
-        ( Keys_Held & KEY_CPAD_UP ) || ( Keys_Held & KEY_CPAD_DOWN ) ) {
-        circleRead( &CP );
+    if ( Keys_Held & KEY_CPAD_UP ) *DeltaY = -3;
+    if ( Keys_Held & KEY_CPAD_DOWN ) *DeltaY = 3;
     
-        *DeltaX = ( CP.dx - LastCP.dx );
-        *DeltaY = ( CP.dy - LastCP.dy );
-    
-        LastCP = CP;
-        
-        return trueblnr;
-    } else {
-        *DeltaX = 0;
-        *DeltaY = 0;
-        
-        LastCP.dx = 0;
-        LastCP.dy = 0;
-    }
-    
-    return falseblnr;
+    return ( *DeltaX != 0 ) || ( *DeltaY != 0 ) ? trueblnr : falseblnr;
 }
 
 LOCALFUNC blnr GetTouchDelta( int* DeltaX, int* DeltaY ) {
@@ -1581,11 +1561,11 @@ LOCALPROC HandleMouseMovement( void ) {
     
     if ( HaveMouseMotion ) {
         /* Clamp the range of deltas so that the mouse doesn't go too fast/crazy */
-        if ( MouseDeltaX < -5 ) MouseDeltaX = -5;
-        if ( MouseDeltaX > 5 ) MouseDeltaX = 5;
+        if ( MouseDeltaX < -10 ) MouseDeltaX = -10;
+        if ( MouseDeltaX > 10 ) MouseDeltaX = 10;
         
-        if ( MouseDeltaY < -5 ) MouseDeltaY = -5;
-        if ( MouseDeltaY > 5 ) MouseDeltaY = 5;
+        if ( MouseDeltaY < -10 ) MouseDeltaY = -10;
+        if ( MouseDeltaY > 10 ) MouseDeltaY = 10;
         
         MyMousePositionSetDelta( MouseDeltaX, MouseDeltaY );
         
@@ -1594,12 +1574,21 @@ LOCALPROC HandleMouseMovement( void ) {
 }
 
 typedef enum {
-    ScaleMode_1to1,         // No scaling applied
+    ScaleMode_1to1 = 0,     // No scaling applied
     ScaleMode_FitToWidth,   // Scale to fill the screen horizontally
     ScaleMode_FitToHeight,  // Scale to fill the screen vertically
     ScaleMode_Stretch,      // Stretch display to fit screen horizontally and vertically
     NumScaleModes
 } ScreenScaleMode;
+
+#define ScreenCenterX ( MyScreenWidth / 2 )
+#define ScreenCenterY ( MyScreenHeight / 2 )
+
+#define MacScreenCenterX ( vMacScreenWidth / 2 )
+#define MacScreenCenterY ( vMacScreenHeight / 2 )
+
+int ScreenScrollX = 0;
+int ScreenScrollY = 0;
 
 ScreenScaleMode ScaleMode = ScaleMode_1to1;
 
@@ -1622,12 +1611,12 @@ LOCALPROC ToggleScreenScaleMode( void ) {
         }
         case ScaleMode_FitToWidth: {
             ScreenScaleW = ( float ) MyScreenWidth / ( float ) vMacScreenWidth;
-            ScreenScaleH = 1.0f;
+            ScreenScaleH = ( float ) MyScreenWidth / ( float ) vMacScreenWidth;
             
             break;
         }
         case ScaleMode_FitToHeight: {
-            ScreenScaleW = 1.0f;
+            ScreenScaleW = ( float ) MyScreenHeight / ( float ) vMacScreenHeight;
             ScreenScaleH = ( float ) MyScreenHeight / ( float ) vMacScreenHeight;
             
             break;
@@ -1646,7 +1635,38 @@ LOCALPROC ToggleScreenScaleMode( void ) {
         }
     }
     
+    /* Linear filtering makes unscaled mode look like crap for some reason.
+     * Disable it for this scale mode only.
+     */
+    if ( ScaleMode == ScaleMode_1to1 ) C3D_TexSetFilter( &FBTexture, GPU_NEAREST, GPU_NEAREST );
+    else C3D_TexSetFilter( &FBTexture, GPU_LINEAR, GPU_LINEAR );
+    
+    /* Reset scrolling offsets */
+    ScreenScrollX = 0;
+    ScreenScrollY = 0;
+    
     // printf( "m: %d w: %.1f h: %.1f\n", ScaleMode, ScreenScaleW, ScreenScaleH );
+}
+
+/*
+ * TODO:
+ * The scroll offset in one of the scale modes is wrong.
+ */
+LOCALPROC UpdateScreenScroll( void ) {
+    float MaxScrollX = ( ( ( float ) vMacScreenWidth ) * ScreenScaleW ) - MyScreenWidth;
+    float MaxScrollY = ( ( ( float ) vMacScreenHeight ) * ScreenScaleH ) - MyScreenHeight;
+    
+    ScreenScrollX = ( ( MyScreenWidth / 2 ) - CurMouseH );
+    ScreenScrollY = ( ( MyScreenHeight / 2 ) - CurMouseV );
+    
+    /* Clamp to the edges of the screen */
+    if ( ScreenScrollX > 0 ) ScreenScrollX = 0;
+    if ( ScreenScrollX < -MaxScrollX ) ScreenScrollX = -MaxScrollX;
+    
+    if ( ScreenScrollY < -MaxScrollY ) ScreenScrollY = -MaxScrollY;
+    if ( ScreenScrollY > 0 ) ScreenScrollY = 0;
+    
+    //printf( "SW: %d SH: %d\n", ScreenScrollX, ScreenScrollY );
 }
 
 /* --- event handling for main window --- */
@@ -1673,8 +1693,10 @@ LOCALPROC HandleTheEvent( void ) {
         if ( Keys_Down & KEY_SELECT )
             ToggleScreenScaleMode( );
         
+        UpdateScreenScroll( );
+        
         C3D_FrameBegin( C3D_FRAME_SYNCDRAW );
-           FB_Draw( MainRenderTarget, 0, 0, ScreenScaleW, ScreenScaleH );
+           FB_Draw( MainRenderTarget, ScreenScrollX, ScreenScrollY, ScreenScaleW, ScreenScaleH );
         C3D_FrameEnd( 0 );
         
         // printf( "dx: %d, dy: %d\n", dx, dy );
