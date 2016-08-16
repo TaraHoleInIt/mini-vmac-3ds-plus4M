@@ -1,6 +1,7 @@
-# Mini vMac 3DS Port
+## Mini vMac 3DS Port
 
-Macintosh Plus with 4MB variant
+Macintosh Plus with 4MB variant  
+Most changes/3ds GLUE in src/MYOSGLUE.c
 
 # What's working:
 Boots on real hardware  
