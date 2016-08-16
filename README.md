@@ -8,6 +8,8 @@ Boots on real hardware
 1BPP Framebuffer conversion and display  
 Basic input using the DPAD/Circle Pad  
 Touchscreen mouse  
+SELECT Button toggles screen scaling  
+START Bails
 
 # TODO:
 Fix logging bug that locks the emulator  
