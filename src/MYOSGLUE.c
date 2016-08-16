@@ -43,6 +43,9 @@ GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) | \
 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
+#define MyScreenWidth 400
+#define MyScreenHeight 240
+
 static int Video_SetupRenderTarget( void );
 static int Video_SetupShader( void );
 static int Video_CreateTexture( void );
@@ -213,9 +216,9 @@ void Video_UpdateTexture2( u8* Src, int Size, INFB_FORMAT Format, int StartY, in
     }
 }
 
-void FB_Draw( C3D_RenderTarget* Target, float X, float Y, float Scale ) {
-    int Width = 512 * Scale;
-    int Height = 512 * Scale;
+void FB_Draw( C3D_RenderTarget* Target, float X, float Y, float ScaleX, float ScaleY ) {
+    int Width = 512 * ScaleX;
+    int Height = 512 * ScaleY;
     float u = 1.0;
     float v = 1.0;
     
@@ -1586,8 +1589,64 @@ LOCALPROC HandleMouseMovement( void ) {
         
         MyMousePositionSetDelta( MouseDeltaX, MouseDeltaY );
         
-        printf( "dx: %d dy: %d\n", MouseDeltaX, MouseDeltaY );
+        //printf( "dx: %d dy: %d\n", MouseDeltaX, MouseDeltaY );
     }
+}
+
+typedef enum {
+    ScaleMode_1to1,         // No scaling applied
+    ScaleMode_FitToWidth,   // Scale to fill the screen horizontally
+    ScaleMode_FitToHeight,  // Scale to fill the screen vertically
+    ScaleMode_Stretch,      // Stretch display to fit screen horizontally and vertically
+    NumScaleModes
+} ScreenScaleMode;
+
+ScreenScaleMode ScaleMode = ScaleMode_1to1;
+
+/* Screen scale factors */
+float ScreenScaleW = 1.0f;
+float ScreenScaleH = 1.0f;
+
+LOCALPROC ToggleScreenScaleMode( void ) {
+    ScaleMode++;
+    
+    if ( ScaleMode >= NumScaleModes )
+        ScaleMode = ScaleMode_1to1;
+    
+    switch ( ScaleMode ) {
+        case ScaleMode_1to1: {
+            ScreenScaleW = 1.0f;
+            ScreenScaleH = 1.0f;
+            
+            break;
+        }
+        case ScaleMode_FitToWidth: {
+            ScreenScaleW = ( float ) MyScreenWidth / ( float ) vMacScreenWidth;
+            ScreenScaleH = 1.0f;
+            
+            break;
+        }
+        case ScaleMode_FitToHeight: {
+            ScreenScaleW = 1.0f;
+            ScreenScaleH = ( float ) MyScreenHeight / ( float ) vMacScreenHeight;
+            
+            break;
+        }
+        case ScaleMode_Stretch: {
+            ScreenScaleW = ( float ) MyScreenWidth / ( float ) vMacScreenWidth;
+            ScreenScaleH = ( float ) MyScreenHeight / ( float ) vMacScreenHeight;
+            
+            break;
+        }
+        default: {
+            ScreenScaleW = 1.0f;
+            ScreenScaleH = 1.0f;
+            
+            break;
+        }
+    }
+    
+    // printf( "m: %d w: %.1f h: %.1f\n", ScaleMode, ScreenScaleW, ScreenScaleH );
 }
 
 /* --- event handling for main window --- */
@@ -1611,8 +1670,11 @@ LOCALPROC HandleTheEvent( void ) {
         if ( Keys_Down & KEY_START )
             ForceMacOff = trueblnr;
         
+        if ( Keys_Down & KEY_SELECT )
+            ToggleScreenScaleMode( );
+        
         C3D_FrameBegin( C3D_FRAME_SYNCDRAW );
-           FB_Draw( MainRenderTarget, 0, 0, 0.75 );
+           FB_Draw( MainRenderTarget, 0, 0, ScreenScaleW, ScreenScaleH );
         C3D_FrameEnd( 0 );
         
         // printf( "dx: %d, dy: %d\n", dx, dy );
