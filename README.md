@@ -12,7 +12,8 @@ Touchscreen mouse
 # TODO:
 Fix logging bug that locks the emulator  
 Code cleanup  
-Remove unused (all) SDL Audio code
+Remove unused (all) SDL Audio code  
+Scroll screen centered on mouse in scaled modes  
 
 # TODO (At some point):
 Sound  
@@ -32,3 +33,4 @@ SELECT Toggles screen scaling mode
 # Notes
 This is a very early WIP port so if it crashes/hangs/murders you... I dunno...  
 The bottom screen is used for debug info and also says hi.  
+The scaled modes do not yet follow the mouse so the unscaled mode is useless.  
