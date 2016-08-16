@@ -15,10 +15,8 @@
 */
 
 /*
-	MY Operating System GLUE. (for SDL Library)
-
-	All operating system dependent code for the
-	SDL Library should go here.
+ * Operating system glue for the Nintendo 3DS
+ * 2016 Tara Keeling
 */
 
 #include "CNFGRAPI.h"
@@ -29,10 +27,6 @@
 
 #include "STRCONST.h"
 
-/*
- * 3DS Port main components
- * 2016 - Tara K
- */
 /*
  * PICA200 Vertex shader
  */
@@ -888,7 +882,7 @@ LOCALPROC DisconnectKeyCodes3(void)
 
 /* --- time, date, location --- */
 
-#define dbglog_TimeStuff (1 && dbglog_HAVE)
+#define dbglog_TimeStuff (0 && dbglog_HAVE)
 
 LOCALVAR ui5b TrueEmulatedTime = 0;
 
@@ -1493,27 +1487,112 @@ LOCALPROC CheckSavedMacMsg(void)
 
 #if UseMotionEvents
 LOCALVAR blnr CaughtMouse = falseblnr;
-#endif
+#endif    
 
-/* --- event handling for main window --- */
-LOCALPROC GetCStickDelta( int* DX, int* DY ) {
+u32 Keys_Down = 0;
+u32 Keys_Up = 0;
+u32 Keys_Held = 0;
+
+/*
+ * FIXME:
+ *
+ * This is broken because when at max range the deltas are 0
+ * so when you release the CPAD the mouse just snaps back
+ */
+LOCALFUNC blnr GetCPadDelta( int* DeltaX, int* DeltaY ) {
+    static circlePosition LastCP = {
+        0,
+        0
+    };
     circlePosition CP;
     
-    circleRead( &CP );
+    if ( ( Keys_Held & KEY_CPAD_LEFT ) || ( Keys_Held & KEY_CPAD_RIGHT ) ||
+        ( Keys_Held & KEY_CPAD_UP ) || ( Keys_Held & KEY_CPAD_DOWN ) ) {
+        circleRead( &CP );
     
-    *DX = CP.dx;
-    *DY = CP.dy;
+        *DeltaX = ( CP.dx - LastCP.dx );
+        *DeltaY = ( CP.dy - LastCP.dy );
+    
+        LastCP = CP;
+        
+        return trueblnr;
+    } else {
+        *DeltaX = 0;
+        *DeltaY = 0;
+        
+        LastCP.dx = 0;
+        LastCP.dy = 0;
+    }
+    
+    return falseblnr;
 }
 
-LOCALPROC HandleTheEvent( void ) {
-    u32 Keys_Down = 0;
-    u32 Keys_Up = 0;
-    u32 Keys_Held = 0;
-    int MouseX = 0;
-    int MouseY = 0;
-    static circlePosition LastCPadState;
-    circlePosition CPadState;
+LOCALFUNC blnr GetTouchDelta( int* DeltaX, int* DeltaY ) {
+    static touchPosition LastTP = {
+        0,
+        0
+    };
+    touchPosition TP;
     
+    if ( Keys_Held & KEY_TOUCH ) {
+        touchRead( &TP );
+    
+        *DeltaX = ( TP.px - LastTP.px );
+        *DeltaY = ( TP.py - LastTP.py );
+    
+        LastTP = TP;
+        
+        return trueblnr;
+    } else {
+        *DeltaX = 0;
+        *DeltaY = 0;
+        
+        LastTP.px = 0;
+        LastTP.py = 0;
+    }
+    
+    return falseblnr;
+}
+
+LOCALFUNC blnr IsMouseKeyDown( void ) {
+    return ( Keys_Held & KEY_L ) || ( Keys_Held & KEY_R ) ? trueblnr : falseblnr;
+}
+
+LOCALPROC HandleMouseMovement( void ) {
+    int MouseDeltaX = 0;
+    int MouseDeltaY = 0;
+    
+    /*
+     * Mouse input order:
+     *
+     * Touchscreen -> CPad -> CPadPro (TODO)
+     */
+    if ( GetTouchDelta( &MouseDeltaX, &MouseDeltaY ) ) {
+        HaveMouseMotion = trueblnr;
+    }
+    else if ( GetCPadDelta( &MouseDeltaX, &MouseDeltaY ) ) {
+        HaveMouseMotion = trueblnr;
+    } else {
+        HaveMouseMotion = falseblnr;
+    }
+    
+    if ( HaveMouseMotion ) {
+        /* Clamp the range of deltas so that the mouse doesn't go too fast/crazy */
+        if ( MouseDeltaX < -5 ) MouseDeltaX = -5;
+        if ( MouseDeltaX > 5 ) MouseDeltaX = 5;
+        
+        if ( MouseDeltaY < -5 ) MouseDeltaY = -5;
+        if ( MouseDeltaY > 5 ) MouseDeltaY = 5;
+        
+        MyMousePositionSetDelta( MouseDeltaX, MouseDeltaY );
+        
+        printf( "dx: %d dy: %d\n", MouseDeltaX, MouseDeltaY );
+    }
+}
+
+/* --- event handling for main window --- */
+
+LOCALPROC HandleTheEvent( void ) {
     if ( aptMainLoop( ) ) {
         hidScanInput( );
         
@@ -1521,27 +1600,22 @@ LOCALPROC HandleTheEvent( void ) {
         Keys_Up = hidKeysUp( );
         Keys_Held = hidKeysHeld( );
         
-        if ( Keys_Held & KEY_LEFT ) MouseX-= 2;
-        if ( Keys_Held & KEY_RIGHT ) MouseX+= 2;
-        if ( Keys_Held & KEY_UP ) MouseY-= 2;
-        if ( Keys_Held & KEY_DOWN ) MouseY+= 2;
+        HandleMouseMovement( );
+        MyMouseButtonSet( IsMouseKeyDown( ) );
         
-        if ( MouseX > 0 || MouseY > 0 || MouseX < 0 || MouseY < 0 )
-            HaveMouseMotion = trueblnr;
-        else
-            HaveMouseMotion = falseblnr;
-        
-        if ( HaveMouseMotion )
-            MousePositionNotify( MouseX, MouseY );
-        
-        MyMouseButtonSet( ( Keys_Held & KEY_R ) ? trueblnr : falseblnr );
-        
+        /*
+         * HACKHACKHACK
+         *
+         * For the love of god do this properly.
+         */
         if ( Keys_Down & KEY_START )
             ForceMacOff = trueblnr;
         
         C3D_FrameBegin( C3D_FRAME_SYNCDRAW );
            FB_Draw( MainRenderTarget, 0, 0, 0.75 );
         C3D_FrameEnd( 0 );
+        
+        // printf( "dx: %d, dy: %d\n", dx, dy );
         
         //printf( "%d, %d\n", MouseX, MouseY );
         //printf( "time: %d\n", osGetTime( ) );
