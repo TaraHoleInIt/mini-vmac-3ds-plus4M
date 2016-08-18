@@ -923,7 +923,7 @@ u64 MSAtAppStart = 0;
  * Returns the time in milliseconds since the start of the app
  */
 LOCALFUNC u32 GetMS( void ) {
-    return ( u32 ) ( osGetTime( ) - MSAtAppStart );
+    return ( u32 ) osGetTime( );
 }
 
 LOCALFUNC blnr UpdateTrueEmulatedTime(void)
@@ -1650,7 +1650,7 @@ LOCALPROC ToggleScreenScaleMode( void ) {
 
 /*
  * TODO:
- * The scroll offset in one of the scale modes is wrong.
+ * Properly center screen in fit to height mode
  */
 LOCALPROC UpdateScreenScroll( void ) {
     float MaxScrollX = ( ( ( float ) vMacScreenWidth ) * ScreenScaleW ) - MyScreenWidth;
@@ -1660,11 +1660,17 @@ LOCALPROC UpdateScreenScroll( void ) {
     ScreenScrollY = ( ( MyScreenHeight / 2 ) - CurMouseV );
     
     /* Clamp to the edges of the screen */
-    if ( ScreenScrollX > 0 ) ScreenScrollX = 0;
-    if ( ScreenScrollX < -MaxScrollX ) ScreenScrollX = -MaxScrollX;
+    if ( ScaleMode != ScaleMode_FitToHeight ) {
+        if ( ScreenScrollX > 0 ) ScreenScrollX = 0;
+        if ( ScreenScrollX < -MaxScrollX ) ScreenScrollX = -MaxScrollX;
     
-    if ( ScreenScrollY < -MaxScrollY ) ScreenScrollY = -MaxScrollY;
-    if ( ScreenScrollY > 0 ) ScreenScrollY = 0;
+        if ( ScreenScrollY < -MaxScrollY ) ScreenScrollY = -MaxScrollY;
+        if ( ScreenScrollY > 0 ) ScreenScrollY = 0;
+    } else {
+        /* I'm done fiddling with this for now, but at least it's centered */
+        ScreenScrollX = 20;
+        ScreenScrollY = 0;
+    }
     
     //printf( "SW: %d SH: %d\n", ScreenScrollX, ScreenScrollY );
 }
