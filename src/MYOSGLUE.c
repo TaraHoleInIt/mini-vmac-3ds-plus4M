@@ -27,6 +27,10 @@
 
 #include "STRCONST.h"
 
+u32 Keys_Down = 0;
+u32 Keys_Up = 0;
+u32 Keys_Held = 0;
+
 /* --- control mode and internationalization --- */
 
 #define NeedCell2PlainAsciiMap 1
@@ -1133,6 +1137,10 @@ const signed char Keyboard_Map[ Map_Height ][ Map_Width ] = {
 LOCALVAR signed char CurrentKeyDown = 0;
 
 LOCALVAR blnr KeyboardIsUppercase = falseblnr;
+LOCALVAR blnr KeyboardIsActive = falseblnr;
+
+LOCALPROC Keyboard_OnPenDown( touchPosition* TP );
+LOCALPROC Keyboard_OnPenUp( touchPosition* TP );
 
 LOCALPROC UpdateKeyboardTexture( blnr Uppercase ) {
     rgba32* Src = Uppercase ? Keyboard_Uppercase_Image : Keyboard_Lowercase_Image;
@@ -1145,6 +1153,32 @@ LOCALPROC UpdateKeyboardTexture( blnr Uppercase ) {
 LOCALPROC Keyboard_SetCase( blnr Uppercase ) {
     UpdateKeyboardTexture( Uppercase );
     KeyboardIsUppercase = Uppercase;
+}
+
+LOCALPROC Keyboard_Update( void ) {
+    touchPosition TP;
+    
+    touchRead( &TP );
+    
+    if ( Keys_Down & KEY_TOUCH )
+        Keyboard_OnPenDown( &TP );
+    
+    if ( Keys_Up & KEY_TOUCH )
+        Keyboard_OnPenUp( &TP );
+}
+
+LOCALPROC Keyboard_Toggle( void ) {
+    if ( KeyboardIsActive ) {
+        /* We don't need to do anything,
+         * yet.
+         */
+    } else {
+        /* Reset keyboard to lowercase and unpress any held keys. */
+        Keyboard_SetCase( falseblnr );
+        Keyboard_OnPenUp( NULL );
+    }
+    
+    KeyboardIsActive = ! KeyboardIsActive;
 }
 
 /* Inverts the colours of the given region of pixels while leaving the alpha channel alone.
@@ -1245,6 +1279,7 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
     
     /* Special keys */
     AssignTouchKeyToMac( ' ', MKC_Space );
+    AssignTouchKeyToMac( 0x08, MKC_BackSpace );
     
     InitKeyCodes( );
     
@@ -1265,7 +1300,7 @@ LOCALPROC CheckTheCapsLock( void ) {
 LOCALPROC Keyboard_OnPenDown( touchPosition* TP ) {
     signed char MapEntry = KeyFromTouchPoint( TP->px, TP->py );
     
-    if ( isascii( MapEntry ) && MapEntry > 0 ) {
+    if ( MapEntry != 0 ) {
         DoKeyCode( MapEntry, trueblnr );
         CurrentKeyDown = MapEntry;
     }
@@ -1905,10 +1940,6 @@ LOCALPROC CheckSavedMacMsg(void)
 LOCALVAR blnr CaughtMouse = falseblnr;
 #endif    
 
-u32 Keys_Down = 0;
-u32 Keys_Up = 0;
-u32 Keys_Held = 0;
-
 /*
  * TODO:
  * Read using analogue stick values.
@@ -1929,7 +1960,7 @@ LOCALFUNC blnr GetTouchDelta( int* DeltaX, int* DeltaY ) {
         0
     };
     touchPosition TP;
-    /*
+    
     if ( Keys_Held & KEY_TOUCH ) {
         touchRead( &TP );
     
@@ -1946,15 +1977,6 @@ LOCALFUNC blnr GetTouchDelta( int* DeltaX, int* DeltaY ) {
         LastTP.px = 0;
         LastTP.py = 0;
     }
-    */
-    
-    touchRead( &TP );
-    
-    if ( Keys_Down & KEY_TOUCH )
-        Keyboard_OnPenDown( &TP );
-    
-    if ( Keys_Up & KEY_TOUCH )
-        Keyboard_OnPenUp( &TP );
     
     return falseblnr;
 }
@@ -1972,7 +1994,7 @@ LOCALPROC HandleMouseMovement( void ) {
      *
      * Touchscreen -> CPad -> CPadPro (TODO)
      */
-    if ( GetTouchDelta( &MouseDeltaX, &MouseDeltaY ) ) {
+    if ( KeyboardIsActive == falseblnr && GetTouchDelta( &MouseDeltaX, &MouseDeltaY ) ) {
         HaveMouseMotion = trueblnr;
     }
     else if ( GetCPadDelta( &MouseDeltaX, &MouseDeltaY ) ) {
@@ -2097,6 +2119,32 @@ LOCALPROC UpdateScreenScroll( void ) {
     //printf( "SW: %d SH: %d\n", ScreenScrollX, ScreenScrollY );
 }
 
+LOCALPROC DrawMainScreen( void ) {
+    /* Make sure to use nearest filtering for unscaled mode and linear
+     * for every other mode.
+     */
+    if ( ScaleMode == ScaleMode_1to1 ) C3D_TexSetFilter( &FBTexture, GPU_NEAREST, GPU_NEAREST );
+    else C3D_TexSetFilter( &FBTexture, GPU_LINEAR, GPU_LINEAR );
+    
+    C3D_FrameDrawOn( MainRenderTarget );
+    C3D_FVUnifMtx4x4( GPU_VERTEX_SHADER, LocProjectionUniforms, &ProjectionMain );
+    DrawTexture( &FBTexture, 512, 512, ScreenScrollX, ScreenScrollY, ScreenScaleW, ScreenScaleH );
+}
+
+LOCALPROC DrawSubScreen( void ) {
+    float SubScaleX = 0.625f;//( ( float ) MySubScreenWidth ) / 512.0f;
+    float SubScaleY = 0.70f;//( ( float ) MySubScreenHeight ) / 512.0f;
+    
+    /* Always use linear texture filtering for scaled version of main screen. */
+    C3D_TexSetFilter( &FBTexture, GPU_LINEAR, GPU_LINEAR );
+    
+    C3D_FrameDrawOn( SubRenderTarget );
+    C3D_FVUnifMtx4x4( GPU_VERTEX_SHADER, LocProjectionUniforms, &ProjectionSub );
+    
+    if ( KeyboardIsActive ) DrawTexture( &KeyboardTex, 512, 256, 0, 0, 1.0f, 1.0f );
+    else DrawTexture( &FBTexture, 512, 512, 0, 0, SubScaleX, SubScaleY );
+}
+
 /* --- event handling for main window --- */
 
 LOCALPROC HandleControlMode( void ) {
@@ -2123,19 +2171,20 @@ LOCALPROC HandleTheEvent( void ) {
         Handle3FingerSalute( );
         HandleControlMode( );
         
+        if ( KeyboardIsActive )
+            Keyboard_Update( );
+        
         if ( Keys_Down & KEY_SELECT )
             ToggleScreenScaleMode( );
+        
+        if ( Keys_Down & KEY_Y )
+            Keyboard_Toggle( );
         
         UpdateScreenScroll( );
         
         C3D_FrameBegin( C3D_FRAME_SYNCDRAW );
-            C3D_FrameDrawOn( MainRenderTarget );
-            C3D_FVUnifMtx4x4( GPU_VERTEX_SHADER, LocProjectionUniforms, &ProjectionMain );
-            DrawTexture( &FBTexture, 512, 512, ScreenScrollX, ScreenScrollY, ScreenScaleW, ScreenScaleH );
-        
-            C3D_FrameDrawOn( SubRenderTarget );
-            C3D_FVUnifMtx4x4( GPU_VERTEX_SHADER, LocProjectionUniforms, &ProjectionSub );
-            DrawTexture( &KeyboardTex, 512, 256, 0, 0, 1.0f, 1.0f );
+            DrawMainScreen( );
+            DrawSubScreen( );
         C3D_FrameEnd( 0 );
         
         // printf( "dx: %d, dy: %d\n", dx, dy );
