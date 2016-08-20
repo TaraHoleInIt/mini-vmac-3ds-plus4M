@@ -252,10 +252,6 @@ rgba32* LoadPNG( const char* Path, int* OutWidth, int* OutHeight ) {
     return NULL;
 }
 
-rgba32* Keyboard_Lowercase_Image = NULL;
-rgba32* Keyboard_Uppercase_Image = NULL;
-blnr HaveKeyboardLoaded = falseblnr;
-
 static void* TempTextureBuffer = NULL;
 
 typedef enum {
@@ -488,8 +484,6 @@ void UI_UploadTexture32( void* ImageData, C3D_Tex* Texture, int Width, int Heigh
 
 static int Video_CreateTextures( void ) {
     C3D_TexEnv* Env = NULL;
-    int Width = 0;
-    int Height = 0;
     
     C3D_TexInit( &FBTexture, 512, 512, GPU_RGB565 );
     C3D_TexInit( &KeyboardTex, 512, 256, GPU_RGBA8 );
@@ -504,12 +498,6 @@ static int Video_CreateTextures( void ) {
         C3D_TexEnvOp( Env, C3D_Both, 0, 0, 0 );
         C3D_TexEnvFunc( Env, C3D_Both, GPU_REPLACE );
     }
-    
-    Keyboard_Uppercase_Image = LoadPNG( "gfx/ui_kb_uc.png", &Width, &Height );
-    Keyboard_Lowercase_Image = LoadPNG( "gfx/ui_kb_lc.png", &Width, &Height );
-    
-    if ( Keyboard_Lowercase_Image && Keyboard_Uppercase_Image )
-        HaveKeyboardLoaded = trueblnr;
     
     return 1;
 }
@@ -539,20 +527,16 @@ void Video_Close( void ) {
     if ( TempTextureBuffer )
         linearFree( TempTextureBuffer );
     
-    if ( Keyboard_Lowercase_Image )
-        linearFree( Keyboard_Lowercase_Image );
-    
-    if ( Keyboard_Uppercase_Image )
-        linearFree( Keyboard_Uppercase_Image );
-    
     if ( Shader ) {
         shaderProgramFree( &Program );
         DVLB_Free( Shader );
     }
     
-    if ( MainRenderTarget ) {
+    if ( MainRenderTarget )
         C3D_RenderTargetDelete( MainRenderTarget );
-    }
+    
+    if ( SubRenderTarget )
+        C3D_RenderTargetDelete( SubRenderTarget );
     
     C3D_TexDelete( &FBTexture );
     C3D_TexDelete( &KeyboardTex );
@@ -1134,25 +1118,102 @@ const signed char Keyboard_Map[ Map_Height ][ Map_Width ] = {
         0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00, }
 };
 
+/* Special keys in the keymap */
+#define TKP_Clear 0xFF
+#define TKP_Div 0xFE
+#define TKP_Mul 0xFD
+#define TKP_Sub 0xFC
+#define TKP_Add 0xFB
+#define TKP_CapsLock 0xFA
+#define TKP_Shift 0xF9
+#define TKP_Option 0xF8
+#define TKP_Command 0xF7
+#define TKP_UpArrow 0xF6
+#define TKP_LeftArrow 0xF5
+#define TKP_RightArrow 0xF4
+#define TKP_DownArrow 0xF3
+
+typedef enum {
+    Keyboard_State_Normal = 0,
+    Keyboard_State_Shifted,
+    Keyboard_State_Capslock
+} KeyboardState;
+
+LOCALVAR KeyboardState KeyboardCurrentState = Keyboard_State_Normal;
+
 LOCALVAR signed char CurrentKeyDown = 0;
 
 LOCALVAR blnr KeyboardIsUppercase = falseblnr;
 LOCALVAR blnr KeyboardIsActive = falseblnr;
 
+rgba32* Keyboard_Lowercase_Image = NULL;
+rgba32* Keyboard_Uppercase_Image = NULL;
+rgba32* Keyboard_Shift_Image = NULL;
+
+blnr HaveKeyboardLoaded = falseblnr;
+
+blnr CapsLockState = falseblnr;
+blnr ShiftState = falseblnr;
+blnr OptionState = falseblnr;
+blnr CommandState = falseblnr;
+
 LOCALPROC Keyboard_OnPenDown( touchPosition* TP );
 LOCALPROC Keyboard_OnPenUp( touchPosition* TP );
 
-LOCALPROC UpdateKeyboardTexture( blnr Uppercase ) {
-    rgba32* Src = Uppercase ? Keyboard_Uppercase_Image : Keyboard_Lowercase_Image;
+LOCALFUNC rgba32* KeyboardGetImage( KeyboardState State ) {
+    switch ( State ) {
+        case Keyboard_State_Normal:
+            return Keyboard_Lowercase_Image;
+            break;
+        case Keyboard_State_Capslock:
+            return Keyboard_Uppercase_Image;
+            break;
+        case Keyboard_State_Shifted:
+            return Keyboard_Shift_Image;
+            break;
+        default:
+            return Keyboard_Lowercase_Image;
+            break;
+    };
     
-    if ( HaveKeyboardLoaded ) {
-        UI_UploadTexture32( Src, &KeyboardTex, 512, 256 );
-    }
+    return NULL;
 }
 
-LOCALPROC Keyboard_SetCase( blnr Uppercase ) {
-    UpdateKeyboardTexture( Uppercase );
-    KeyboardIsUppercase = Uppercase;
+LOCALPROC KeyboardSetTexture( rgba32* Image ) {
+    UI_UploadTexture32( Image, &KeyboardTex, 512, 256 );
+}
+
+LOCALPROC KeyboardUpdateTexture( void ) {
+    KeyboardSetTexture( KeyboardGetImage( KeyboardCurrentState ) );
+}
+
+LOCALPROC KeyboardSetState( KeyboardState State ) {
+    KeyboardSetTexture( KeyboardGetImage( State ) );
+    KeyboardCurrentState = State;
+}
+
+LOCALFUNC blnr Keyboard_Init( void ) {
+    int Width = 0;
+    int Height = 0;
+    
+    Keyboard_Uppercase_Image = LoadPNG( "gfx/ui_kb_uc.png", &Width, &Height );
+    Keyboard_Lowercase_Image = LoadPNG( "gfx/ui_kb_lc.png", &Width, &Height );
+    Keyboard_Shift_Image = LoadPNG( "gfx/ui_kb_shift.png", &Width, &Height );
+    
+    if ( Keyboard_Lowercase_Image && Keyboard_Uppercase_Image && Keyboard_Shift_Image )
+        HaveKeyboardLoaded = trueblnr;
+    
+    KeyboardSetState( Keyboard_State_Normal );
+    
+    return trueblnr;
+}
+
+LOCALPROC Keyboard_DeInit( void ) {
+    if ( Keyboard_Uppercase_Image ) linearFree( Keyboard_Uppercase_Image );
+    if ( Keyboard_Lowercase_Image ) linearFree( Keyboard_Lowercase_Image );
+    if ( Keyboard_Shift_Image ) linearFree( Keyboard_Shift_Image );
+    
+    C3D_TexDelete( &KeyboardTex );
 }
 
 LOCALPROC Keyboard_Update( void ) {
@@ -1174,7 +1235,7 @@ LOCALPROC Keyboard_Toggle( void ) {
          */
     } else {
         /* Reset keyboard to lowercase and unpress any held keys. */
-        Keyboard_SetCase( falseblnr );
+        KeyboardSetState( Keyboard_State_Normal );
         Keyboard_OnPenUp( NULL );
     }
     
@@ -1194,11 +1255,14 @@ LOCALPROC InvertKeyboardPixels( rgba32* Image, int Left, int Right, int Top, int
     }
 }
 
-LOCALPROC InvertKeyboardTiles( signed char TileToInvert, rgba32* Image ) {
+LOCALPROC InvertKeyboardTiles( signed char TileToInvert ) {
+    rgba32* Image = NULL;
     int TileLeftPx = 0;
     int TileTopPx = 0;
     int TileX = 0;
     int TileY = 0;
+    
+    Image = KeyboardGetImage( KeyboardCurrentState );
     
     for ( TileY = 0; TileY < Map_Height; TileY++ ) {
         for ( TileX = 0; TileX < Map_Width; TileX++ ) {
@@ -1210,6 +1274,8 @@ LOCALPROC InvertKeyboardTiles( signed char TileToInvert, rgba32* Image ) {
             }
         }
     }
+    
+    KeyboardUpdateTexture( );
 }
 
 /* Returns a character from the on screen keyboard map from where
@@ -1303,11 +1369,14 @@ LOCALPROC Keyboard_OnPenDown( touchPosition* TP ) {
     if ( MapEntry != 0 ) {
         DoKeyCode( MapEntry, trueblnr );
         CurrentKeyDown = MapEntry;
+        
+        InvertKeyboardTiles( MapEntry );
     }
 }
 
 LOCALPROC Keyboard_OnPenUp( touchPosition* TP ) {
     if ( CurrentKeyDown ) {
+        InvertKeyboardTiles( CurrentKeyDown );
         DoKeyCode( CurrentKeyDown, falseblnr );
         CurrentKeyDown = 0;
     }
@@ -2177,7 +2246,8 @@ LOCALPROC HandleTheEvent( void ) {
         if ( Keys_Down & KEY_SELECT )
             ToggleScreenScaleMode( );
         
-        if ( Keys_Down & KEY_Y )
+        /* Only switch to keyboard mode if the graphics were loaded */
+        if ( ( Keys_Down & KEY_Y ) && HaveKeyboardLoaded == trueblnr )
             Keyboard_Toggle( );
         
         UpdateScreenScroll( );
@@ -2519,6 +2589,7 @@ LOCALFUNC blnr InitOSGLU(void)
     MSAtAppStart = osGetTime( );
     
     if ( Video_Init( ) )
+    if ( Keyboard_Init( ) )
 	if (AllocMyMemory())
 #if dbglog_HAVE
 	if (dbglog_open())
@@ -2534,10 +2605,6 @@ LOCALFUNC blnr InitOSGLU(void)
 	if (Screen_Init())
 	if (CreateMainWindow())
 	{
-        /* TODO:
-         * Find a better place for this.
-         */
-        Keyboard_SetCase( falseblnr );
 		return trueblnr;
 	}
     printf( "B\n" );
@@ -2573,6 +2640,7 @@ LOCALPROC UnInitOSGLU(void)
 
 	CheckSavedMacMsg();
 
+    Keyboard_DeInit( );
     Video_Close( );
 }
 
