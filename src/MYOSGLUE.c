@@ -27,6 +27,19 @@
 
 #include "STRCONST.h"
 
+/* --- control mode and internationalization --- */
+
+#define NeedCell2PlainAsciiMap 1
+
+#include "INTLCHAR.h"
+
+/* --- information about the environment --- */
+
+#define WantColorTransValid 0
+
+#include "COMOSGLU.h"
+#include "CONTROLM.h"
+
 /*
  * PICA200 Vertex shader
  */
@@ -43,8 +56,16 @@ GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) | \
 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
+#define TEXTURE32_TRANSFER_FLAGS \
+(GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) | \
+GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | \
+GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
+
 #define MyScreenWidth 400
 #define MyScreenHeight 240
+
+#define MySubScreenWidth 320
+#define MySubScreenHeight 240
 
 static int Video_SetupRenderTarget( void );
 static int Video_SetupShader( void );
@@ -63,10 +84,179 @@ static shaderProgram_s Program;
 
 int LocProjectionUniforms = 0;
 
+C3D_Tex KeyboardTex;
 C3D_Tex FBTexture;
 
 C3D_Mtx ProjectionMain;
 C3D_Mtx ProjectionSub;
+
+typedef union {
+    u32 Bits;
+    u8 r;
+    u8 g;
+    u8 b;
+    u8 a;
+} rgba32;
+
+/* Courtesy of Bit Twiddling Hacks By Sean Eron Anderson */
+u32 NextPowerOf2( unsigned int Value ) {
+    // compute the next highest power of 2 of 32-bit v
+    Value--;
+    Value |= Value >> 1;
+    Value |= Value >> 2;
+    Value |= Value >> 4;
+    Value |= Value >> 8;
+    Value |= Value >> 16;
+    
+    return ++Value;
+}
+
+/* Allocate space for an image of With * Height and 32 bit colour depth */
+rgba32* AllocImageSpace( int Width, int Height ) {
+    return ( rgba32* ) linearMemAlign( Width * Height * sizeof( rgba32 ), 0x80 );
+}
+
+/* Check if the PNG signature is valid, returns > 0 on success */
+int IsGoodPNG( FILE* fp ) {
+    u8 Buffer[ 8 ];
+    return ( fread( Buffer, 1, sizeof( Buffer ), fp ) == 8 && png_check_sig( Buffer, 8 ) );
+}
+
+/* In theory this should set libpng to give us 32bit RGBA image data */
+void ModifyPNGIfWeHaveTo( png_structp PNGHandle, png_infop PNGInfo ) {
+    int BitDepth = png_get_bit_depth( PNGHandle, PNGInfo );
+    
+    /* Unpack packed bit depths */
+    if ( BitDepth < 8 )
+        png_set_packing( PNGHandle );
+    
+    /* Convert transparency to alpha */
+    if ( png_get_valid( PNGHandle, PNGInfo, PNG_INFO_tRNS ) )
+        png_set_tRNS_to_alpha( PNGHandle );
+    
+    /* Convert to 32bit RGBA */
+    switch ( png_get_color_type( PNGHandle, PNGInfo ) ) {
+        case PNG_COLOR_TYPE_GRAY: {
+            png_set_gray_to_rgb( PNGHandle );
+            break;
+        }
+        case PNG_COLOR_TYPE_GRAY_ALPHA: {
+            png_set_gray_to_rgb( PNGHandle );
+            break;
+        }
+        case PNG_COLOR_TYPE_PALETTE: {
+            png_set_expand( PNGHandle );
+            break;
+        }
+        case PNG_COLOR_TYPE_RGB: {
+            /* What?
+             * Why does this work but not PNG_FILLER_BEFORE?!
+             */
+            png_set_filler( PNGHandle, 0xFF, PNG_FILLER_BEFORE );
+            break;
+        }
+        default: break;
+    };
+    
+    png_read_update_info( PNGHandle, PNGInfo );
+}
+
+/* Handles the allocation of the image data and reading of the PNG data into it. */
+rgba32* FinishPNGRead( png_structp PNGHandle, int Width, int Height, int RowBytes ) {
+    png_bytep RowPointers[ Height ];
+    rgba32* ImageData = NULL;
+    int i = 0;
+    
+    ImageData = AllocImageSpace( Width, Height );
+ 
+    if ( ImageData ) {
+        for ( i = 0; i < Height; i++ ) {
+            RowPointers[ i ] = ( png_bytep ) &ImageData[ i * ( RowBytes / sizeof( rgba32 ) ) ];
+        }
+
+        png_read_image( PNGHandle, RowPointers );
+    }
+    
+    return ImageData;
+}
+
+/* Loads a PNG image using libpng
+ *
+ * Path:        Path to PNG image we should load
+ * OutWidth:    Pointer to integer which will receive image width to the next power of 2
+ * OutHeight:   Pointer to integer which will receive image height to the next power of 2
+ * OutData:     Pointer to pointer which will receive pointer to image data. Pointer.
+ *
+ * Returns 1 on success.
+ */
+rgba32* LoadPNG( const char* Path, int* OutWidth, int* OutHeight ) {
+    png_structp PNGHandle = NULL;
+    png_infop PNGInfo = NULL;
+    rgba32* ImageData = NULL;
+    FILE* fp = NULL;
+    int RowBytes = 0;
+    int Height = 0;
+    int Width = 0;
+    
+    if ( ( fp = fopen( Path, "rb" ) ) != NULL ) {
+        if ( IsGoodPNG( fp ) ) {
+            PNGHandle = png_create_read_struct( PNG_LIBPNG_VER_STRING, NULL, NULL, NULL );
+            
+            if ( PNGHandle ) {
+                PNGInfo = png_create_info_struct( PNGHandle );
+                
+                if ( PNGInfo ) {
+                    if ( setjmp( png_jmpbuf( PNGHandle ) ) ) {
+                        png_destroy_read_struct( &PNGHandle, &PNGInfo, NULL );
+                        
+                        if ( fp )
+                            fclose( fp );
+
+                        return 0;
+                    }
+                    
+                    png_init_io( PNGHandle, fp );
+                    png_set_sig_bytes( PNGHandle, 8 );
+                    png_read_info( PNGHandle, PNGInfo );
+                    
+                    ModifyPNGIfWeHaveTo( PNGHandle, PNGInfo );
+                    
+                    /* Since we're loading this for a GPU texture, align it to the next power of 2 */
+                    Width = png_get_image_width( PNGHandle, PNGInfo );
+                    Height = png_get_image_height( PNGHandle, PNGInfo );
+                    RowBytes = ( int ) png_get_rowbytes( PNGHandle, PNGInfo );
+                    
+                    Width = ( int ) NextPowerOf2( ( u32 ) Width );
+                    Height = ( int ) NextPowerOf2( ( u32 ) Height );
+                    
+                    ImageData = FinishPNGRead( PNGHandle, Width, Height, Width * sizeof( rgba32 ) );
+                    
+                    if ( ImageData ) {
+                        /* Cleanup and stuff */
+                        png_read_end( PNGHandle, NULL );
+                        png_destroy_read_struct( &PNGHandle, &PNGInfo, NULL );
+                        
+                        if ( OutWidth ) *OutWidth = Width;
+                        if ( OutHeight ) *OutHeight = Height;
+                        
+                        fclose( fp );
+                        return ImageData;
+                    }
+                }
+                
+                png_destroy_read_struct( &PNGHandle, NULL, NULL );
+            }
+        }
+        
+        fclose( fp );
+    }
+    
+    return NULL;
+}
+
+rgba32* Keyboard_Lowercase_Image = NULL;
+rgba32* Keyboard_Uppercase_Image = NULL;
+blnr HaveKeyboardLoaded = falseblnr;
 
 static void* TempTextureBuffer = NULL;
 
@@ -216,19 +406,17 @@ void Video_UpdateTexture2( u8* Src, int Size, INFB_FORMAT Format, int StartY, in
     }
 }
 
-void FB_Draw( C3D_RenderTarget* Target, float X, float Y, float ScaleX, float ScaleY ) {
-    int Width = 512 * ScaleX;
-    int Height = 512 * ScaleY;
+void DrawTexture( C3D_Tex* Texture, int Width, int Height, float X, float Y, float ScaleX, float ScaleY ) {
     float u = 1.0;
     float v = 1.0;
     
-    if ( Target ) {
-        C3D_FrameDrawOn( Target );
-        C3D_FVUnifMtx4x4( GPU_VERTEX_SHADER, LocProjectionUniforms, &ProjectionMain );
-        C3D_TexBind( 0, &FBTexture );
+    Width*= ScaleX;
+    Height*= ScaleY;
+    
+    C3D_TexBind( 0, Texture );
         
-        C3D_ImmDrawBegin( GPU_TRIANGLES );
-        // 1st triangle
+    C3D_ImmDrawBegin( GPU_TRIANGLES );
+    // 1st triangle
         C3D_ImmSendAttrib( X, Y, 1.0, 0.0 );
         C3D_ImmSendAttrib( 0.0, 0.0, 0.0, 0.0 );
         
@@ -247,20 +435,19 @@ void FB_Draw( C3D_RenderTarget* Target, float X, float Y, float ScaleX, float Sc
         
         C3D_ImmSendAttrib( X + Width, Y + Height, 1.0, 0.0 );
         C3D_ImmSendAttrib( u, v, 0.0, 0.0 );
-        C3D_ImmDrawEnd( );
-    }
+    C3D_ImmDrawEnd( );
 }
 
 static int Video_SetupRenderTarget( void ) {
     MainRenderTarget = C3D_RenderTargetCreate( 240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8 );
-    //SubRenderTarget = C3D_RenderTargetCreate( 240, 320, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8 );
+    SubRenderTarget = C3D_RenderTargetCreate( 240, 320, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8 );
     
-    if ( MainRenderTarget /*&& SubRenderTarget*/ ) {
+    if ( MainRenderTarget && SubRenderTarget ) {
         C3D_RenderTargetSetClear( MainRenderTarget, C3D_CLEAR_ALL, 0xFF, 0 );
         C3D_RenderTargetSetOutput( MainRenderTarget, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS );
         
-        //C3D_RenderTargetSetClear( SubRenderTarget, C3D_CLEAR_ALL, 0xFFFF, 0 );
-        //C3D_RenderTargetSetOutput( SubRenderTarget, GFX_BOTTOM, GFX_LEFT, DISPLAY_TRANSFER_FLAGS );
+        C3D_RenderTargetSetClear( SubRenderTarget, C3D_CLEAR_ALL, 0x0000FFFF, 0 );
+        C3D_RenderTargetSetOutput( SubRenderTarget, GFX_BOTTOM, GFX_LEFT, DISPLAY_TRANSFER_FLAGS );
         
         return 1;
     }
@@ -296,11 +483,21 @@ static int Video_SetupShader( void ) {
     return 0;
 }
 
-static int Video_CreateTexture( void ) {
+void UI_UploadTexture32( void* ImageData, C3D_Tex* Texture, int Width, int Height ) {
+    GSPGPU_FlushDataCache( ImageData, Width * Height * sizeof( rgba32 ) );
+    C3D_SafeDisplayTransfer( ( u32* ) ImageData, GX_BUFFER_DIM( Width, Height ), ( u32* ) Texture->data, GX_BUFFER_DIM( Width, Height ), TEXTURE32_TRANSFER_FLAGS );
+}
+
+static int Video_CreateTextures( void ) {
     C3D_TexEnv* Env = NULL;
+    int Width = 0;
+    int Height = 0;
     
     C3D_TexInit( &FBTexture, 512, 512, GPU_RGB565 );
+    C3D_TexInit( &KeyboardTex, 512, 256, GPU_RGBA8 );
+    
     C3D_TexSetFilter( &FBTexture, GPU_NEAREST, GPU_NEAREST );
+    C3D_TexSetFilter( &KeyboardTex, GPU_NEAREST, GPU_NEAREST );
     
     Env = C3D_GetTexEnv( 0 );
     
@@ -310,22 +507,31 @@ static int Video_CreateTexture( void ) {
         C3D_TexEnvFunc( Env, C3D_Both, GPU_REPLACE );
     }
     
+    Keyboard_Uppercase_Image = LoadPNG( "gfx/ui_kb_uc.png", &Width, &Height );
+    Keyboard_Lowercase_Image = LoadPNG( "gfx/ui_kb_lc.png", &Width, &Height );
+    
+    if ( Keyboard_Uppercase_Image )
+        UI_UploadTexture32( Keyboard_Uppercase_Image, &KeyboardTex, 512, 256 );
+    
+    if ( Keyboard_Lowercase_Image && Keyboard_Uppercase_Image )
+        HaveKeyboardLoaded = trueblnr;
+    
     return 1;
 }
 
 int Video_Init( void ) {
     gfxInitDefault( );
-    consoleInit( GFX_BOTTOM, NULL );
-    printf( "Hi!\n" );
+    //consoleInit( GFX_BOTTOM, NULL );
+    //printf( "Hi!\n" );
     
     C3D_Init( C3D_DEFAULT_CMDBUF_SIZE );
     
     Video_SetupRenderTarget( );
     Video_SetupShader( );
-    Video_CreateTexture( );
+    Video_CreateTextures( );
     
     Mtx_OrthoTilt( &ProjectionMain, 0.0, 400.0, 240.0, 0.0, 0.0, 1.0 );
-    //Mtx_OrthoTilt( &ProjectionSub, 0.0, 320.0, 240.0, 0.0, 0.0, 1.0 );
+    Mtx_OrthoTilt( &ProjectionSub, 0.0, 320.0, 240.0, 0.0, 0.0, 1.0 );
     
     C3D_DepthTest( true, GPU_GEQUAL, GPU_WRITE_ALL );
     
@@ -338,6 +544,12 @@ void Video_Close( void ) {
     if ( TempTextureBuffer )
         linearFree( TempTextureBuffer );
     
+    if ( Keyboard_Lowercase_Image )
+        linearFree( Keyboard_Lowercase_Image );
+    
+    if ( Keyboard_Uppercase_Image )
+        linearFree( Keyboard_Uppercase_Image );
+    
     if ( Shader ) {
         shaderProgramFree( &Program );
         DVLB_Free( Shader );
@@ -348,6 +560,7 @@ void Video_Close( void ) {
     }
     
     C3D_TexDelete( &FBTexture );
+    C3D_TexDelete( &KeyboardTex );
     C3D_Fini( );
     
     gfxExit( );
@@ -359,12 +572,6 @@ GLOBALPROC MyMoveBytes(anyp srcPtr, anyp destPtr, si5b byteCount)
 {
 	(void) memcpy((char *)destPtr, (char *)srcPtr, byteCount);
 }
-
-/* --- control mode and internationalization --- */
-
-#define NeedCell2PlainAsciiMap 1
-
-#include "INTLCHAR.h"
 
 /* --- sending debugging info to file --- */
 
@@ -408,14 +615,6 @@ LOCALPROC dbglog_close0(void)
 }
 
 #endif
-
-/* --- information about the environment --- */
-
-#define WantColorTransValid 0
-
-#include "COMOSGLU.h"
-
-#include "CONTROLM.h"
 
 /* --- parameter buffers --- */
 
@@ -1702,7 +1901,13 @@ LOCALPROC HandleTheEvent( void ) {
         UpdateScreenScroll( );
         
         C3D_FrameBegin( C3D_FRAME_SYNCDRAW );
-           FB_Draw( MainRenderTarget, ScreenScrollX, ScreenScrollY, ScreenScaleW, ScreenScaleH );
+            C3D_FrameDrawOn( MainRenderTarget );
+            C3D_FVUnifMtx4x4( GPU_VERTEX_SHADER, LocProjectionUniforms, &ProjectionMain );
+            DrawTexture( &FBTexture, 512, 512, ScreenScrollX, ScreenScrollY, ScreenScaleW, ScreenScaleH );
+        
+            C3D_FrameDrawOn( SubRenderTarget );
+            C3D_FVUnifMtx4x4( GPU_VERTEX_SHADER, LocProjectionUniforms, &ProjectionSub );
+            DrawTexture( &KeyboardTex, 512, 256, 0, 0, 1.0f, 1.0f );
         C3D_FrameEnd( 0 );
         
         // printf( "dx: %d, dy: %d\n", dx, dy );
