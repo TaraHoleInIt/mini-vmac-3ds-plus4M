@@ -965,7 +965,7 @@ LOCALPROC CheckMouseState(void)
 #define Map_Width 40
 #define Map_Height 30
 
-const unsigned char Keyboard_Map[ Map_Height ][ Map_Width ] = {
+const si3b Keyboard_Map[ Map_Height ][ Map_Width ] = {
     {
         0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
         0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
@@ -1025,12 +1025,12 @@ const unsigned char Keyboard_Map[ Map_Height ][ Map_Width ] = {
         0x00,  0x60,  0x60,  0x31,  0x31,  0x32,  0x32,  0x33,  0x33,  0x34,
         0x34,  0x35,  0x35,  0x36,  0x36,  0x37,  0x37,  0x38,  0x38,  0x39,
         0x39,  0x30,  0x30,  0x2D,  0x2D,  0x3D,  0x3D,  0x08,  0x08,  0x08,
-        0x00,  0xFF,  0xFF,  0x3D,  0x3D,  0xFE,  0xFE,  0xFD,  0xFD,  0x00, },
+        0x00,  0xF2,  0xF2,  0x3D,  0x3D,  0xFE,  0xFE,  0xFD,  0xFD,  0x00, },
     {
         0x00,  0x60,  0x60,  0x31,  0x31,  0x32,  0x32,  0x33,  0x33,  0x34,
         0x34,  0x35,  0x35,  0x36,  0x36,  0x37,  0x37,  0x38,  0x38,  0x39,
         0x39,  0x30,  0x30,  0x2D,  0x2D,  0x3D,  0x3D,  0x08,  0x08,  0x08,
-        0x00,  0xFF,  0xFF,  0x3D,  0x3D,  0xFE,  0xFE,  0xFD,  0xFD,  0x00, },
+        0x00,  0xF2,  0xF2,  0x3D,  0x3D,  0xFE,  0xFE,  0xFD,  0xFD,  0x00, },
     {
         0x00,  0x09,  0x09,  0x09,  0x71,  0x71,  0x77,  0x77,  0x65,  0x65,
         0x72,  0x72,  0x74,  0x74,  0x79,  0x79,  0x75,  0x75,  0x69,  0x69,
@@ -1119,7 +1119,7 @@ const unsigned char Keyboard_Map[ Map_Height ][ Map_Width ] = {
 };
 
 /* Special keys in the keymap */
-#define TKP_Clear 0xFF
+#define TKP_Clear 0xF2
 #define TKP_Div 0xFE
 #define TKP_Mul 0xFD
 #define TKP_Sub 0xFC
@@ -1141,7 +1141,7 @@ typedef enum {
 
 LOCALVAR KeyboardState KeyboardCurrentState = Keyboard_State_Normal;
 
-LOCALVAR unsigned char CurrentKeyDown = 0;
+LOCALVAR si3b CurrentKeyDown = 0;
 
 LOCALVAR blnr KeyboardIsUppercase = falseblnr;
 LOCALVAR blnr KeyboardIsActive = falseblnr;
@@ -1149,6 +1149,7 @@ LOCALVAR blnr KeyboardIsActive = falseblnr;
 rgba32* Keyboard_Lowercase_Image = NULL;
 rgba32* Keyboard_Uppercase_Image = NULL;
 rgba32* Keyboard_Shift_Image = NULL;
+rgba32* Keyboard_Current_Image = NULL;
 
 blnr HaveKeyboardLoaded = falseblnr;
 
@@ -1181,11 +1182,12 @@ LOCALFUNC rgba32* KeyboardGetImage( KeyboardState State ) {
 }
 
 LOCALPROC KeyboardSetTexture( rgba32* Image ) {
-    UI_UploadTexture32( Image, &KeyboardTex, 512, 256 );
+    memcpy( Keyboard_Current_Image, Image, 512 * 256 * sizeof( rgba32 ) );
+    UI_UploadTexture32( Keyboard_Current_Image, &KeyboardTex, 512, 256 );
 }
 
 LOCALPROC KeyboardUpdateTexture( void ) {
-    KeyboardSetTexture( KeyboardGetImage( KeyboardCurrentState ) );
+    KeyboardSetTexture( Keyboard_Current_Image );
 }
 
 LOCALPROC KeyboardSetState( KeyboardState State ) {
@@ -1200,8 +1202,9 @@ LOCALFUNC blnr Keyboard_Init( void ) {
     Keyboard_Uppercase_Image = LoadPNG( "gfx/ui_kb_uc.png", &Width, &Height );
     Keyboard_Lowercase_Image = LoadPNG( "gfx/ui_kb_lc.png", &Width, &Height );
     Keyboard_Shift_Image = LoadPNG( "gfx/ui_kb_shift.png", &Width, &Height );
+    Keyboard_Current_Image = AllocImageSpace( 512, 256 );
     
-    if ( Keyboard_Lowercase_Image && Keyboard_Uppercase_Image && Keyboard_Shift_Image )
+    if ( Keyboard_Lowercase_Image && Keyboard_Uppercase_Image && Keyboard_Shift_Image && Keyboard_Current_Image )
         HaveKeyboardLoaded = trueblnr;
     
     KeyboardSetState( Keyboard_State_Normal );
@@ -1213,6 +1216,7 @@ LOCALPROC Keyboard_DeInit( void ) {
     if ( Keyboard_Uppercase_Image ) linearFree( Keyboard_Uppercase_Image );
     if ( Keyboard_Lowercase_Image ) linearFree( Keyboard_Lowercase_Image );
     if ( Keyboard_Shift_Image ) linearFree( Keyboard_Shift_Image );
+    if ( Keyboard_Current_Image ) linearFree( Keyboard_Current_Image );
     
     C3D_TexDelete( &KeyboardTex );
 }
@@ -1276,14 +1280,11 @@ LOCALPROC InvertKeyboardPixels( rgba32* Image, int Left, int Right, int Top, int
     }
 }
 
-LOCALPROC InvertKeyboardTiles( unsigned char TileToInvert ) {
-    rgba32* Image = NULL;
+LOCALPROC InvertKeyboardTiles( si3b TileToInvert ) {
     int TileLeftPx = 0;
     int TileTopPx = 0;
     int TileX = 0;
     int TileY = 0;
-    
-    Image = KeyboardGetImage( KeyboardCurrentState );
     
     for ( TileY = 0; TileY < Map_Height; TileY++ ) {
         for ( TileX = 0; TileX < Map_Width; TileX++ ) {
@@ -1291,7 +1292,7 @@ LOCALPROC InvertKeyboardTiles( unsigned char TileToInvert ) {
                 TileLeftPx = TileX * 8;
                 TileTopPx = TileY * 8;
                 
-                InvertKeyboardPixels( Image, TileLeftPx, TileLeftPx + 8, TileTopPx, TileTopPx + 8 );
+                InvertKeyboardPixels( Keyboard_Current_Image, TileLeftPx, TileLeftPx + 8, TileTopPx, TileTopPx + 8 );
             }
         }
     }
@@ -1302,7 +1303,7 @@ LOCALPROC InvertKeyboardTiles( unsigned char TileToInvert ) {
 /* Returns a character from the on screen keyboard map from where
  * the user touched the screen.
  */
-unsigned char KeyFromTouchPoint( int TouchX, int TouchY ) {
+LOCALFUNC si3b KeyFromTouchPoint( int TouchX, int TouchY ) {
     TouchX/= 8;
     TouchY/= 8;
     
@@ -1312,9 +1313,9 @@ unsigned char KeyFromTouchPoint( int TouchX, int TouchY ) {
     return 0;
 }
 
-LOCALVAR unsigned char TouchKeyToMac[ 256 ];
+LOCALVAR si3b TouchKeyToMac[ 256 ];
 
-LOCALPROC AssignTouchKeyToMac( unsigned char TK, si3b MacKey ) {
+LOCALPROC AssignTouchKeyToMac( int TK, si3b MacKey ) {
     TouchKeyToMac[ TK ] = MacKey;
 }
 
@@ -1335,6 +1336,7 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
     AssignTouchKeyToMac( 'i', MKC_I );
     AssignTouchKeyToMac( 'o', MKC_O );
     AssignTouchKeyToMac( 'p', MKC_P );
+    
     AssignTouchKeyToMac( 'a', MKC_A );
     AssignTouchKeyToMac( 's', MKC_S );
     AssignTouchKeyToMac( 'd', MKC_D );
@@ -1344,6 +1346,7 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
     AssignTouchKeyToMac( 'j', MKC_J );
     AssignTouchKeyToMac( 'k', MKC_K );
     AssignTouchKeyToMac( 'l', MKC_L );
+    
     AssignTouchKeyToMac( 'z', MKC_Z );
     AssignTouchKeyToMac( 'x', MKC_X );
     AssignTouchKeyToMac( 'c', MKC_C );
@@ -1367,7 +1370,7 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
     /* Special keys */
     AssignTouchKeyToMac( ' ', MKC_Space );
     AssignTouchKeyToMac( 0x08, MKC_BackSpace );
-    AssignTouchKeyToMac( 0x13, MKC_Enter );
+    AssignTouchKeyToMac( 0x13, MKC_Return );
     
     /* Arrow keys */
     AssignTouchKeyToMac( TKP_LeftArrow, MKC_Left );
@@ -1384,7 +1387,7 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
 LOCALPROC DoKeyCode( int Key, blnr Down ) {
     int MacKey = TouchKeyToMac[ Key ];
     
-    if ( MacKey > 0 )
+    if ( MacKey != -1 )
         Keyboard_UpdateKeyMap2( MacKey, Down );
 }
 
@@ -1392,9 +1395,9 @@ LOCALPROC CheckTheCapsLock( void ) {
 }
 
 LOCALPROC Keyboard_OnPenDown( touchPosition* TP ) {
-    unsigned char MapEntry = KeyFromTouchPoint( TP->px, TP->py );
+    si3b MapEntry = KeyFromTouchPoint( TP->px, TP->py );
     
-    if ( MapEntry != 0 ) {
+    if ( MapEntry != -1 ) {
         DoKeyCode( MapEntry, trueblnr );
         CurrentKeyDown = MapEntry;
         
@@ -2245,8 +2248,14 @@ LOCALPROC DrawSubScreen( void ) {
 /* --- event handling for main window --- */
 
 LOCALPROC HandleControlMode( void ) {
-    if ( Keys_Down & KEY_START ) Keyboard_UpdateKeyMap2( MKC_Control, trueblnr );
-    if ( Keys_Up & KEY_START ) Keyboard_UpdateKeyMap2( MKC_Control, falseblnr );
+    static blnr ToggleState = falseblnr;
+    
+    if ( Keys_Down & KEY_START ) {
+        if ( ToggleState == falseblnr ) Keyboard_UpdateKeyMap2( MKC_Control, trueblnr );
+        else Keyboard_UpdateKeyMap2( MKC_Control, falseblnr );
+        
+        ToggleState = ! ToggleState;
+    }
 }
 
 LOCALPROC Handle3FingerSalute( void ) {
