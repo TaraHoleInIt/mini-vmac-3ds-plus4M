@@ -965,7 +965,7 @@ LOCALPROC CheckMouseState(void)
 #define Map_Width 40
 #define Map_Height 30
 
-const si3b Keyboard_Map[ Map_Height ][ Map_Width ] = {
+const int Keyboard_Map[ Map_Height ][ Map_Width ] = {
     {
         0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
         0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
@@ -1141,7 +1141,7 @@ typedef enum {
 
 LOCALVAR KeyboardState KeyboardCurrentState = Keyboard_State_Normal;
 
-LOCALVAR si3b CurrentKeyDown = 0;
+LOCALVAR int CurrentKeyDown = 0;
 
 LOCALVAR blnr KeyboardIsUppercase = falseblnr;
 LOCALVAR blnr KeyboardIsActive = falseblnr;
@@ -1249,8 +1249,6 @@ LOCALPROC Keyboard_Update( void ) {
     
     if ( Keys_Up & KEY_TOUCH )
         Keyboard_OnPenUp( &TP );
-    
-    Keyboard_HandleDPAD( );
 }
 
 LOCALPROC Keyboard_Toggle( void ) {
@@ -1280,7 +1278,7 @@ LOCALPROC InvertKeyboardPixels( rgba32* Image, int Left, int Right, int Top, int
     }
 }
 
-LOCALPROC InvertKeyboardTiles( si3b TileToInvert ) {
+LOCALPROC InvertKeyboardTiles( int TileToInvert ) {
     int TileLeftPx = 0;
     int TileTopPx = 0;
     int TileX = 0;
@@ -1303,17 +1301,17 @@ LOCALPROC InvertKeyboardTiles( si3b TileToInvert ) {
 /* Returns a character from the on screen keyboard map from where
  * the user touched the screen.
  */
-LOCALFUNC si3b KeyFromTouchPoint( int TouchX, int TouchY ) {
+LOCALFUNC int KeyFromTouchPoint( int TouchX, int TouchY ) {
     TouchX/= 8;
     TouchY/= 8;
     
     if ( TouchX > 0 && TouchX < Map_Width && TouchY > 0 && TouchY < Map_Height )
-        return Keyboard_Map[ TouchY ][ TouchX ];
+        return ( int ) Keyboard_Map[ TouchY ][ TouchX ];
     
     return 0;
 }
 
-LOCALVAR si3b TouchKeyToMac[ 256 ];
+LOCALVAR int TouchKeyToMac[ 256 ];
 
 LOCALPROC AssignTouchKeyToMac( int TK, si3b MacKey ) {
     TouchKeyToMac[ TK ] = MacKey;
@@ -1367,6 +1365,20 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
     AssignTouchKeyToMac( '8', MKC_8 );
     AssignTouchKeyToMac( '9', MKC_9 );
     
+    /* Other keys that probably have a real name */
+    AssignTouchKeyToMac( '`', MKC_Grave );
+    AssignTouchKeyToMac( '-', MKC_Minus );
+    AssignTouchKeyToMac( '=', MKC_Equal );
+    AssignTouchKeyToMac( 0x09, MKC_Tab );
+    AssignTouchKeyToMac( '[', MKC_LeftBracket );
+    AssignTouchKeyToMac( ']', MKC_RightBracket );
+    AssignTouchKeyToMac( '\\', MKC_BackSlash );
+    AssignTouchKeyToMac( ';', MKC_SemiColon );
+    AssignTouchKeyToMac( '\'', MKC_SingleQuote );
+    AssignTouchKeyToMac( ',', MKC_Comma );
+    AssignTouchKeyToMac( '.', MKC_Period );
+    AssignTouchKeyToMac( '/', MKC_Slash );
+    
     /* Special keys */
     AssignTouchKeyToMac( ' ', MKC_Space );
     AssignTouchKeyToMac( 0x08, MKC_BackSpace );
@@ -1378,6 +1390,13 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
     AssignTouchKeyToMac( TKP_UpArrow, MKC_Up );
     AssignTouchKeyToMac( TKP_DownArrow, MKC_Down );
     
+    /* Numpad keys */
+    AssignTouchKeyToMac( TKP_Add, MKC_KPAdd );
+    AssignTouchKeyToMac( TKP_Sub, MKC_KPSubtract );
+    AssignTouchKeyToMac( TKP_Mul, MKC_KPMultiply );
+    AssignTouchKeyToMac( TKP_Div, MKC_KPDevide );
+    AssignTouchKeyToMac( TKP_Clear, MKC_Clear );
+    
     InitKeyCodes( );
     
     return trueblnr;
@@ -1385,9 +1404,13 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
 
 /* TouchKeyToMac array is broken */
 LOCALPROC DoKeyCode( int Key, blnr Down ) {
-    int MacKey = TouchKeyToMac[ Key ];
+    int MacKey = -1;
     
-    if ( MacKey != -1 )
+    /* key is < -1 */
+    if ( Key > -1 )
+        MacKey = TouchKeyToMac[ Key ];
+    
+    if ( MacKey >= 0 )
         Keyboard_UpdateKeyMap2( MacKey, Down );
 }
 
@@ -1395,9 +1418,9 @@ LOCALPROC CheckTheCapsLock( void ) {
 }
 
 LOCALPROC Keyboard_OnPenDown( touchPosition* TP ) {
-    si3b MapEntry = KeyFromTouchPoint( TP->px, TP->py );
+    int MapEntry = KeyFromTouchPoint( TP->px, TP->py );
     
-    if ( MapEntry != -1 ) {
+    if ( MapEntry != 0 ) {
         DoKeyCode( MapEntry, trueblnr );
         CurrentKeyDown = MapEntry;
         
@@ -1406,7 +1429,7 @@ LOCALPROC Keyboard_OnPenDown( touchPosition* TP ) {
 }
 
 LOCALPROC Keyboard_OnPenUp( touchPosition* TP ) {
-    if ( CurrentKeyDown ) {
+    if ( CurrentKeyDown != -1 && CurrentKeyDown != 0 ) {
         InvertKeyboardTiles( CurrentKeyDown );
         DoKeyCode( CurrentKeyDown, falseblnr );
         CurrentKeyDown = 0;
@@ -2286,6 +2309,9 @@ LOCALPROC HandleTheEvent( void ) {
         /* Only switch to keyboard mode if the graphics were loaded */
         if ( ( Keys_Down & KEY_Y ) && HaveKeyboardLoaded == trueblnr )
             Keyboard_Toggle( );
+        
+        /* Handle the DPAD arrow keys regardless of if the keyboard is shown */
+        Keyboard_HandleDPAD( );
         
         UpdateScreenScroll( );
         
