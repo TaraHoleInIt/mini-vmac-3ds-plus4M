@@ -965,7 +965,7 @@ LOCALPROC CheckMouseState(void)
 #define Map_Width 40
 #define Map_Height 30
 
-const signed char Keyboard_Map[ Map_Height ][ Map_Width ] = {
+const unsigned char Keyboard_Map[ Map_Height ][ Map_Width ] = {
     {
         0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
         0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
@@ -1141,7 +1141,7 @@ typedef enum {
 
 LOCALVAR KeyboardState KeyboardCurrentState = Keyboard_State_Normal;
 
-LOCALVAR signed char CurrentKeyDown = 0;
+LOCALVAR unsigned char CurrentKeyDown = 0;
 
 LOCALVAR blnr KeyboardIsUppercase = falseblnr;
 LOCALVAR blnr KeyboardIsActive = falseblnr;
@@ -1159,6 +1159,7 @@ blnr CommandState = falseblnr;
 
 LOCALPROC Keyboard_OnPenDown( touchPosition* TP );
 LOCALPROC Keyboard_OnPenUp( touchPosition* TP );
+LOCALPROC DoKeyCode( int Key, blnr Down );
 
 LOCALFUNC rgba32* KeyboardGetImage( KeyboardState State ) {
     switch ( State ) {
@@ -1216,6 +1217,24 @@ LOCALPROC Keyboard_DeInit( void ) {
     C3D_TexDelete( &KeyboardTex );
 }
 
+/*
+ * This handles mapping the DPAD to the Mac arrow keys.
+ * Should be useful for some games.
+ */
+LOCALPROC Keyboard_HandleDPAD( void ) {
+    if ( Keys_Down & KEY_DLEFT ) DoKeyCode( TKP_LeftArrow, trueblnr );
+    if ( Keys_Up & KEY_DLEFT ) DoKeyCode( TKP_LeftArrow, falseblnr );
+    
+    if ( Keys_Down & KEY_DRIGHT ) DoKeyCode( TKP_RightArrow, trueblnr );
+    if ( Keys_Up & KEY_DRIGHT ) DoKeyCode( TKP_RightArrow, falseblnr );
+    
+    if ( Keys_Down & KEY_DUP ) DoKeyCode( TKP_UpArrow, trueblnr );
+    if ( Keys_Up & KEY_DUP ) DoKeyCode( TKP_UpArrow, falseblnr );
+    
+    if ( Keys_Down & KEY_DDOWN ) DoKeyCode( TKP_DownArrow, trueblnr );
+    if ( Keys_Up & KEY_DDOWN ) DoKeyCode( TKP_DownArrow, falseblnr );
+}
+
 LOCALPROC Keyboard_Update( void ) {
     touchPosition TP;
     
@@ -1226,6 +1245,8 @@ LOCALPROC Keyboard_Update( void ) {
     
     if ( Keys_Up & KEY_TOUCH )
         Keyboard_OnPenUp( &TP );
+    
+    Keyboard_HandleDPAD( );
 }
 
 LOCALPROC Keyboard_Toggle( void ) {
@@ -1255,7 +1276,7 @@ LOCALPROC InvertKeyboardPixels( rgba32* Image, int Left, int Right, int Top, int
     }
 }
 
-LOCALPROC InvertKeyboardTiles( signed char TileToInvert ) {
+LOCALPROC InvertKeyboardTiles( unsigned char TileToInvert ) {
     rgba32* Image = NULL;
     int TileLeftPx = 0;
     int TileTopPx = 0;
@@ -1281,7 +1302,7 @@ LOCALPROC InvertKeyboardTiles( signed char TileToInvert ) {
 /* Returns a character from the on screen keyboard map from where
  * the user touched the screen.
  */
-signed char KeyFromTouchPoint( int TouchX, int TouchY ) {
+unsigned char KeyFromTouchPoint( int TouchX, int TouchY ) {
     TouchX/= 8;
     TouchY/= 8;
     
@@ -1291,9 +1312,9 @@ signed char KeyFromTouchPoint( int TouchX, int TouchY ) {
     return 0;
 }
 
-LOCALVAR signed char TouchKeyToMac[ 256 ];
+LOCALVAR unsigned char TouchKeyToMac[ 256 ];
 
-LOCALPROC AssignTouchKeyToMac( signed char TK, si3b MacKey ) {
+LOCALPROC AssignTouchKeyToMac( unsigned char TK, si3b MacKey ) {
     TouchKeyToMac[ TK ] = MacKey;
 }
 
@@ -1346,6 +1367,13 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
     /* Special keys */
     AssignTouchKeyToMac( ' ', MKC_Space );
     AssignTouchKeyToMac( 0x08, MKC_BackSpace );
+    AssignTouchKeyToMac( 0x13, MKC_Enter );
+    
+    /* Arrow keys */
+    AssignTouchKeyToMac( TKP_LeftArrow, MKC_Left );
+    AssignTouchKeyToMac( TKP_RightArrow, MKC_Right );
+    AssignTouchKeyToMac( TKP_UpArrow, MKC_Up );
+    AssignTouchKeyToMac( TKP_DownArrow, MKC_Down );
     
     InitKeyCodes( );
     
@@ -1356,7 +1384,7 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
 LOCALPROC DoKeyCode( int Key, blnr Down ) {
     int MacKey = TouchKeyToMac[ Key ];
     
-    if ( MacKey != -1 )
+    if ( MacKey > 0 )
         Keyboard_UpdateKeyMap2( MacKey, Down );
 }
 
@@ -1364,7 +1392,7 @@ LOCALPROC CheckTheCapsLock( void ) {
 }
 
 LOCALPROC Keyboard_OnPenDown( touchPosition* TP ) {
-    signed char MapEntry = KeyFromTouchPoint( TP->px, TP->py );
+    unsigned char MapEntry = KeyFromTouchPoint( TP->px, TP->py );
     
     if ( MapEntry != 0 ) {
         DoKeyCode( MapEntry, trueblnr );
