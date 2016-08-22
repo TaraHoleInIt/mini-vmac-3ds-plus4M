@@ -483,6 +483,9 @@ LOCALVAR ui5b CurEmulatedTime = 0;
 		"DoEmulateOneTick" has been called.
 	*/
 
+int FramesTooSlow = 0;
+int FramesVideoDisabled = 0;
+
 LOCALPROC RunEmulatedTicksToTrueTime(void)
 {
 	/*
@@ -516,17 +519,17 @@ LOCALPROC RunEmulatedTicksToTrueTime(void)
 			n = 8;
 			CurEmulatedTime = OnTrueTime - n;
             
-#if dbglog_HAVE
-            dbglog_writeln( "emulation not fast enough" );
-#endif
+//#if dbglog_HAVE
+            FramesTooSlow++;
+//#endif
 		}
 
 		if (ExtraTimeNotOver() && (--n > 0)) {
 			/* lagging, catch up */
             
-#if dbglog_HAVE
-            dbglog_writeln( "lagging, disabling video this frame" );
-#endif
+//#if dbglog_HAVE
+            FramesVideoDisabled++;
+//#endif
 
 			EmVideoDisable = trueblnr;
 
