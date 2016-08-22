@@ -27,6 +27,11 @@
 
 #include "STRCONST.h"
 
+/* Uncomment to use debug console as a texture.
+ * Press and hold X to see it.
+ */
+/* #define DEBUG_CONSOLE */
+
 u32 Keys_Down = 0;
 u32 Keys_Up = 0;
 u32 Keys_Held = 0;
@@ -502,6 +507,161 @@ static int Video_CreateTextures( void ) {
     return 1;
 }
 
+#ifdef DEBUG_CONSOLE
+#include <sys/iosupport.h>
+
+#define CONSOLE_TEXTURE_TRANSFER_FLAGS \
+(GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) | \
+GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565) | \
+GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
+
+extern ssize_t con_write(struct _reent *r,int fd,const char *ptr, size_t len);
+extern u8 default_font_bin[ ];
+
+static u16* ConsoleBuffer240x320 = NULL;
+static u16* ConsoleTextureBuffer = NULL;
+
+static int ConsoleDirty = 0;
+
+static C3D_Tex ConsoleTex;
+
+static ssize_t MyConsoleWrite( struct _reent* r, int fd, const char* ptr, size_t len ) {
+    ConsoleDirty = 1;
+    return con_write( r, fd, ptr, len );
+}
+
+static PrintConsole C3DConsole = {
+    {
+        default_font_bin,
+        0,
+        256
+    },
+    NULL,
+    0,
+    0,
+    0,
+    0,
+    40,
+    30,
+    0,
+    0,
+    40,
+    30,
+    3,
+    7,
+    0,
+    0,
+    0,
+    false
+};
+
+static const devoptab_t MyDevOpTab = {
+    "con",
+    0,
+    NULL,
+    NULL,
+    MyConsoleWrite,
+    NULL,
+    NULL,
+    NULL
+};
+
+void DebugConsoleFree( void ) {
+    consoleSelect( consoleGetDefault( ) );
+    
+    if ( ConsoleBuffer240x320 )
+        free( ConsoleBuffer240x320 );
+    
+    if ( ConsoleTextureBuffer )
+        linearFree( ConsoleTextureBuffer );
+    
+    ConsoleBuffer240x320 = NULL;
+    ConsoleTextureBuffer = NULL;
+}
+
+int DebugConsoleInit( void ) {
+    ConsoleBuffer240x320 = ( u16* ) malloc( 240 * 320 * 2 );
+    ConsoleTextureBuffer = ( u16* ) linearMemAlign( 256 * 512 * 2, 0x80 );
+    
+    if ( ConsoleBuffer240x320 && ConsoleTextureBuffer ) {
+        C3D_TexInit( &ConsoleTex, 256, 512, GPU_RGB565 );
+        
+        devoptab_list[ STD_OUT ] = &MyDevOpTab;
+        devoptab_list[ STD_ERR ] = &MyDevOpTab;
+        
+        setvbuf( stdout, NULL, _IONBF, 0 );
+        setvbuf( stderr, NULL, _IONBF, 0 );
+        
+        C3DConsole.frameBuffer = ConsoleBuffer240x320;
+        C3DConsole.consoleInitialised = true;
+        
+        consoleSelect( &C3DConsole );
+        consoleSetWindow( &C3DConsole, 0, 0, MySubScreenWidth / 8, MySubScreenHeight / 8 );
+        consoleClear( );
+        
+        return 1;
+    }
+    
+    DebugConsoleFree( );
+    return 0;
+}
+
+void DebugConsoleUpdate( void ) {
+    u16* Src = ( u16* ) ConsoleBuffer240x320;
+    u16* Dst = ( u16* ) ConsoleTextureBuffer;
+    int x = 0;
+    int y = 0;
+    
+    if ( ConsoleDirty ) {
+        /*
+         * TODO:
+         * Speed up later, this is gonna be slow as BALLS.
+         */
+        for ( y = 0; y < 320; y++ ) {
+            for ( x = 0; x < 240; x++ ) {
+                Dst[ x + ( y * 256 ) ] = Src[ x + ( y * 240 ) ];
+            }
+        }
+    
+        GSPGPU_FlushDataCache( ConsoleTextureBuffer, 256 * 512 * 2 );
+        C3D_SafeDisplayTransfer( ( u32* ) ConsoleTextureBuffer, GX_BUFFER_DIM( 256, 512 ), ( u32* ) ConsoleTex.data, GX_BUFFER_DIM( 256, 512 ), CONSOLE_TEXTURE_TRANSFER_FLAGS );
+        
+        ConsoleDirty = 0;
+    }
+}
+
+void DebugConsoleDraw( void ) {
+    DebugConsoleUpdate( );
+    C3D_TexBind( 0, &ConsoleTex );
+    
+    /*
+     * Sorcery!
+     * I don't know it either.
+     */
+    C3D_ImmDrawBegin( GPU_TRIANGLES );
+    // 1st triangle
+    C3D_ImmSendAttrib( 0, 0, 0.5, 0.0 );
+    C3D_ImmSendAttrib( 1.0, 0.0, 0.0, 0.0 );
+    
+    C3D_ImmSendAttrib( 512, 256, 0.5, 0.0 );
+    C3D_ImmSendAttrib( 0.0, 1.0, 0.0, 0.0 );
+    
+    C3D_ImmSendAttrib( 512, 0, 0.5, 0.0 );
+    C3D_ImmSendAttrib( 1.0, 1.0, 0.0, 0.0 );
+    
+    // 2nd triangle
+    C3D_ImmSendAttrib( 0, 0, 0.5, 0.0 );
+    C3D_ImmSendAttrib( 1.0, 0.0, 0.0, 0.0 );
+    
+    C3D_ImmSendAttrib( 0, 256, 0.5, 0.0 );
+    C3D_ImmSendAttrib( 0.0, 0.0, 0.0, 0.0 );
+    
+    C3D_ImmSendAttrib( 512, 256, 0.5, 0.0 );
+    C3D_ImmSendAttrib( 0.0, 1.0, 0.0, 0.0 );
+    C3D_ImmDrawEnd( );
+}
+#endif
+
 int Video_Init( void ) {
     gfxInitDefault( );
     //consoleInit( GFX_BOTTOM, NULL );
@@ -520,6 +680,10 @@ int Video_Init( void ) {
     
     TempTextureBuffer = linearMemAlign( 512 * 512 * 2, 0x80 );
     
+#ifdef DEBUG_CONSOLE
+    DebugConsoleInit( );
+#endif
+    
     return TempTextureBuffer ? 1 : 0;
 }
 
@@ -537,6 +701,10 @@ void Video_Close( void ) {
     
     if ( SubRenderTarget )
         C3D_RenderTargetDelete( SubRenderTarget );
+    
+#ifdef DEBUG_CONSOLE
+    DebugConsoleFree( );
+#endif
     
     C3D_TexDelete( &FBTexture );
     C3D_TexDelete( &KeyboardTex );
@@ -1397,21 +1565,90 @@ LOCALFUNC blnr InitTouchKeyToMac( void ) {
     AssignTouchKeyToMac( TKP_Div, MKC_KPDevide );
     AssignTouchKeyToMac( TKP_Clear, MKC_Clear );
     
+    /* State keys */
+    AssignTouchKeyToMac( TKP_Shift, MKC_Shift );
+    AssignTouchKeyToMac( TKP_CapsLock, MKC_CapsLock );
+    AssignTouchKeyToMac( TKP_Option, MKC_Option );
+    AssignTouchKeyToMac( TKP_Command, MKC_Command );
+    
     InitKeyCodes( );
     
     return trueblnr;
 }
 
-/* TouchKeyToMac array is broken */
+LOCALVAR blnr KeyboardShiftState = falseblnr;
+LOCALVAR blnr KeyboardCapsState = falseblnr;
+LOCALVAR blnr KeyboardOptionState = falseblnr;
+LOCALVAR blnr KeyboardCommandState = falseblnr;
+
+LOCALPROC ToggleStickyKey( si3b MacKey, blnr Down, blnr* KeyState ) {
+    if ( ! KeyState )
+        return;
+    
+    if ( Down == trueblnr ) {
+        if ( *KeyState == falseblnr ) Keyboard_UpdateKeyMap2( MacKey, trueblnr );
+        else Keyboard_UpdateKeyMap2( MacKey, falseblnr );
+        
+        *KeyState = ! *KeyState;
+    }
+}
+
+/*
+ * TODO
+ */
+LOCALPROC DoShift( blnr Down ) {
+}
+
+/* 
+ * TODO
+ */
+LOCALPROC DoCapsLock( blnr Down ) {
+}
+
+LOCALPROC ResetSpecialKeys( void ) {
+    Keyboard_UpdateKeyMap2( MKC_Shift, falseblnr );
+    Keyboard_UpdateKeyMap2( MKC_CapsLock, falseblnr );
+    Keyboard_UpdateKeyMap2( MKC_Option, falseblnr );
+    Keyboard_UpdateKeyMap2( MKC_Command, falseblnr );
+}
+
 LOCALPROC DoKeyCode( int Key, blnr Down ) {
     int MacKey = -1;
     
-    /* key is < -1 */
     if ( Key > -1 )
         MacKey = TouchKeyToMac[ Key ];
     
-    if ( MacKey >= 0 )
+    if ( MacKey >= 0 ) {
+        /* Handle keyboard special and state changing keys */
+        switch ( MacKey ) {
+            case MKC_Shift: {
+                DoShift( Down );
+                return;
+            }
+            case MKC_CapsLock: {
+                DoCapsLock( Down );
+                return;
+            }
+            case MKC_Option: {
+                if ( Down == trueblnr )
+                    InvertKeyboardTiles( TKP_Option );
+                
+                ToggleStickyKey( MKC_Option, Down, &KeyboardOptionState );
+                return;
+            }
+            case MKC_Command: {
+                 if ( Down == trueblnr )
+                    InvertKeyboardTiles( TKP_Command );
+                
+                ToggleStickyKey( MKC_Command, Down, &KeyboardCommandState );
+                return;
+            }
+            default: break;
+        };
+        
         Keyboard_UpdateKeyMap2( MacKey, Down );
+        InvertKeyboardTiles( Key );
+    }
 }
 
 LOCALPROC CheckTheCapsLock( void ) {
@@ -1423,14 +1660,11 @@ LOCALPROC Keyboard_OnPenDown( touchPosition* TP ) {
     if ( MapEntry != 0 ) {
         DoKeyCode( MapEntry, trueblnr );
         CurrentKeyDown = MapEntry;
-        
-        InvertKeyboardTiles( MapEntry );
     }
 }
 
 LOCALPROC Keyboard_OnPenUp( touchPosition* TP ) {
     if ( CurrentKeyDown != -1 && CurrentKeyDown != 0 ) {
-        InvertKeyboardTiles( CurrentKeyDown );
         DoKeyCode( CurrentKeyDown, falseblnr );
         CurrentKeyDown = 0;
     }
@@ -2254,6 +2488,9 @@ LOCALPROC DrawMainScreen( void ) {
     DrawTexture( &FBTexture, 512, 512, ScreenScrollX, ScreenScrollY, ScreenScaleW, ScreenScaleH );
 }
 
+extern int FramesTooSlow;
+extern int FramesVideoDisabled;
+
 LOCALPROC DrawSubScreen( void ) {
     float SubScaleX = 0.625f;//( ( float ) MySubScreenWidth ) / 512.0f;
     float SubScaleY = 0.70f;//( ( float ) MySubScreenHeight ) / 512.0f;
@@ -2266,6 +2503,16 @@ LOCALPROC DrawSubScreen( void ) {
     
     if ( KeyboardIsActive ) DrawTexture( &KeyboardTex, 512, 256, 0, 0, 1.0f, 1.0f );
     else DrawTexture( &FBTexture, 512, 512, 0, 0, SubScaleX, SubScaleY );
+    
+#ifdef DEBUG_CONSOLE
+    if ( Keys_Held & KEY_X ) {
+        printf( "\x1b[2J" );
+        printf( "Frames where not fast enough: %d\n", FramesTooSlow );
+        printf( "Frames where video was disabled: %d\n", FramesVideoDisabled );
+        
+        DebugConsoleDraw( );
+    }
+#endif
 }
 
 /* --- event handling for main window --- */
@@ -2645,9 +2892,19 @@ LOCALPROC UnallocMyMemory(void)
 	}
 }
 
+LOCALPROC DoN3DSSpeedup( void ) {
+    u8 IsNew3DS = 0;
+    
+    APT_CheckNew3DS( &IsNew3DS );
+    
+    if ( IsNew3DS )
+        osSetSpeedupEnable( true );
+}
+
 LOCALFUNC blnr InitOSGLU(void)
 {
     chdir( "sdmc:/3ds/vmac/" );
+    DoN3DSSpeedup( );
     
     MSAtAppStart = osGetTime( );
     
