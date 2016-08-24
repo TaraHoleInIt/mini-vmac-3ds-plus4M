@@ -30,7 +30,7 @@
 /* Uncomment to use debug console as a texture.
  * Press and hold X to see it.
  */
-#define DEBUG_CONSOLE
+/* #define DEBUG_CONSOLE */
 
 u32 Keys_Down = 0;
 u32 Keys_Up = 0;
@@ -41,6 +41,60 @@ u32 Keys_Held = 0;
 #define NeedCell2PlainAsciiMap 1
 
 #include "INTLCHAR.h"
+
+#if dbglog_HAVE
+
+#define dbglog_ToStdErr 0
+
+#if ! dbglog_ToStdErr
+LOCALVAR FILE *dbglog_File = NULL;
+#endif
+
+LOCALFUNC blnr dbglog_open0(void)
+{
+#if dbglog_ToStdErr
+    return trueblnr;
+#else
+    dbglog_File = fopen("dbglog.txt", "w");
+    return (NULL != dbglog_File);
+#endif
+}
+
+LOCALPROC dbglog_write0(char *s, uimr L)
+{
+#if dbglog_ToStdErr
+    (void) fwrite(s, 1, L, stderr);
+#else
+    if (dbglog_File != NULL) {
+        (void) fwrite(s, 1, L, dbglog_File);
+    }
+#endif
+}
+
+LOCALPROC dbglog_close0(void)
+{
+#if ! dbglog_ToStdErr
+    if (dbglog_File != NULL) {
+        fclose(dbglog_File);
+        dbglog_File = NULL;
+    }
+#endif
+}
+
+#endif
+
+/* --- debug settings and utilities --- */
+
+#if ! dbglog_HAVE
+#define WriteExtraErr(s)
+#else
+LOCALPROC WriteExtraErr(char *s)
+{
+    dbglog_writeCStr("*** error: ");
+    dbglog_writeCStr(s);
+    dbglog_writeReturn();
+}
+#endif
 
 /* --- information about the environment --- */
 
@@ -735,49 +789,6 @@ GLOBALPROC MyMoveBytes(anyp srcPtr, anyp destPtr, si5b byteCount)
 {
 	(void) memcpy((char *)destPtr, (char *)srcPtr, byteCount);
 }
-
-/* --- sending debugging info to file --- */
-
-#if dbglog_HAVE
-
-#define dbglog_ToStdErr 1
-
-#if ! dbglog_ToStdErr
-LOCALVAR FILE *dbglog_File = NULL;
-#endif
-
-LOCALFUNC blnr dbglog_open0(void)
-{
-#if dbglog_ToStdErr
-	return trueblnr;
-#else
-    dbglog_File = open("dbglog.txt", "w");
-	return (NULL != dbglog_File);
-#endif
-}
-
-LOCALPROC dbglog_write0(char *s, uimr L)
-{
-#if dbglog_ToStdErr
-	(void) fwrite(s, 1, L, stderr);
-#else
-	if (dbglog_File != NULL) {
-		(void) fwrite(s, 1, L, dbglog_File);
-	}
-#endif
-}
-
-LOCALPROC dbglog_close0(void)
-{
-#if ! dbglog_ToStdErr
-	if (dbglog_File != NULL) {
-		fclose(dbglog_File);
-		dbglog_File = NULL;
-	}
-#endif
-}
-
-#endif
 
 /* --- parameter buffers --- */
 
@@ -1731,7 +1742,7 @@ LOCALPROC DisconnectKeyCodes3(void)
 
 /* --- time, date, location --- */
 
-#define dbglog_TimeStuff (0 && dbglog_HAVE)
+#define dbglog_TimeStuff (1 && dbglog_HAVE)
 
 LOCALVAR ui5b TrueEmulatedTime = 0;
 
