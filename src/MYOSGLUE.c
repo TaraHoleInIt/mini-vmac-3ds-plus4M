@@ -30,7 +30,7 @@
 /* Uncomment to use debug console as a texture.
  * Press and hold X to see it.
  */
-/* #define DEBUG_CONSOLE */
+#define DEBUG_CONSOLE
 
 u32 Keys_Down = 0;
 u32 Keys_Up = 0;
@@ -648,7 +648,6 @@ void DebugConsoleUpdate( void ) {
 }
 
 void DebugConsoleDraw( void ) {
-    DebugConsoleUpdate( );
     C3D_TexBind( 0, &ConsoleTex );
     
     /*
@@ -1610,23 +1609,48 @@ LOCALPROC ToggleStickyKey( si3b MacKey, blnr Down, blnr* KeyState ) {
     }
 }
 
-/*
- * TODO
- */
-LOCALPROC DoShift( blnr Down ) {
-}
-
-/* 
- * TODO
- */
-LOCALPROC DoCapsLock( blnr Down ) {
-}
-
 LOCALPROC ResetSpecialKeys( void ) {
     Keyboard_UpdateKeyMap2( MKC_Shift, falseblnr );
     Keyboard_UpdateKeyMap2( MKC_CapsLock, falseblnr );
     Keyboard_UpdateKeyMap2( MKC_Option, falseblnr );
     Keyboard_UpdateKeyMap2( MKC_Command, falseblnr );
+    
+    KeyboardShiftState = falseblnr;
+    KeyboardCapsState = falseblnr;
+    KeyboardOptionState = falseblnr;
+    KeyboardCommandState = falseblnr;
+}
+
+LOCALPROC DoShift( blnr Down ) {
+    if ( Down == trueblnr ) {
+        if ( KeyboardShiftState == falseblnr ) {
+            KeyboardSetState( Keyboard_State_Shifted );
+            InvertKeyboardTiles( TKP_Shift );
+            
+            ToggleStickyKey( MKC_Shift, trueblnr, &KeyboardShiftState );
+        } else {
+            KeyboardSetState( Keyboard_State_Normal );
+            ToggleStickyKey( MKC_Shift, falseblnr, &KeyboardShiftState );
+            
+            ResetSpecialKeys( );
+        }
+    }
+}
+
+LOCALPROC DoCapsLock( blnr Down ) {
+    if ( Down == trueblnr ) {
+        if ( KeyboardCapsState == falseblnr ) {
+            KeyboardSetState( Keyboard_State_Capslock );
+            InvertKeyboardTiles( TKP_CapsLock );
+            
+            ToggleStickyKey( MKC_CapsLock, trueblnr, &KeyboardCapsState );
+        } else {
+            KeyboardSetState( Keyboard_State_Normal );
+            ToggleStickyKey( MKC_CapsLock, falseblnr, &KeyboardCapsState );
+            
+            ResetSpecialKeys( );
+        }
+    }
 }
 
 LOCALPROC DoKeyCode( int Key, blnr Down ) {
@@ -2522,6 +2546,9 @@ LOCALPROC DrawSubScreen( void ) {
     else DrawTexture( &FBTexture, 512, 512, 0, 0, SubScaleX, SubScaleY );
     
 #ifdef DEBUG_CONSOLE
+    if ( Keys_Down & KEY_X )
+        DebugConsoleUpdate( );
+    
     if ( Keys_Held & KEY_X ) {
         printf( "\x1b[2J" );
         printf( "Frames where not fast enough: %d\n", FramesTooSlow );
