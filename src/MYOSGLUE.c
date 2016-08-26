@@ -2626,6 +2626,10 @@ LOCALPROC HandleTheEvent( void ) {
         
         //printf( "%d, %d\n", MouseX, MouseY );
         //printf( "time: %d\n", osGetTime( ) );
+    } else {
+        /* If we're force closing, make sure the emulator exits.
+         */
+        ForceMacOff = trueblnr;
     }
 }
 
@@ -3017,6 +3021,11 @@ LOCALPROC UnInitOSGLU(void)
 
     Keyboard_DeInit( );
     Video_Close( );
+    
+    /* Wait a bit before exiting so we don't accidentally trigger the camera
+     * when the home menu comes back up if we're still holding L + R.
+     */
+    MyDelay( 250 );
 }
 
 int main(int argc, char **argv)
