@@ -35,7 +35,8 @@ INCLUDES	:=	include
 #ROMFS		:=	romfs
 APP_TITLE	=	Mini vMac
 APP_DESCRIPTION = Macintosh Plus Emulator
-APP_AUTHOR	=	TaraFartsSometimes
+APP_AUTHOR	=	TarableCode
+ICON        = icon.png
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -129,10 +130,14 @@ ifneq ($(ROMFS),)
 	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
+$(OUTPUT).cia:  $(BUILD)
+	arm-none-eabi-strip $(OUTPUT).elf
+	makerom -f cia -o $(OUTPUT).cia -rsf rsf/plus4m.rsf -target t -elf $(OUTPUT).elf -icon icon.bin -banner banners/plus4m.bnr -desc app:4
+
 .PHONY: $(BUILD) clean all
 
 #---------------------------------------------------------------------------------
-all: $(BUILD)
+all: $(OUTPUT) $(BUILD)
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
@@ -141,12 +146,7 @@ $(BUILD):
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf
-
-
-run:
-	3dslink -a 192.168.2.66 $(TARGET).3dsx
-#	/c/devkitPro/citra/citra.exe $(TARGET).3dsx
+	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET).cia
 
 #---------------------------------------------------------------------------------
 else
