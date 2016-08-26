@@ -30,7 +30,7 @@
 /* Uncomment to use debug console as a texture.
  * Press and hold X to see it.
  */
-/* #define DEBUG_CONSOLE */
+/*#define DEBUG_CONSOLE*/
 
 u32 Keys_Down = 0;
 u32 Keys_Up = 0;
@@ -2347,18 +2347,25 @@ LOCALPROC CheckSavedMacMsg(void)
 
 #if UseMotionEvents
 LOCALVAR blnr CaughtMouse = falseblnr;
-#endif    
+#endif
+
+#define MouseMaxDelta 10
+#define MouseMinDelta -10
+#define CPadMaxDelta 3
+#define CPadMinDelta -3
+
+LOCALVAR blnr IsMouseAbsolute = falseblnr;
 
 /*
  * TODO:
  * Read using analogue stick values.
  */
 LOCALFUNC blnr GetCPadDelta( int* DeltaX, int* DeltaY ) {
-    if ( Keys_Held & KEY_CPAD_LEFT ) *DeltaX = -3;
-    if ( Keys_Held & KEY_CPAD_RIGHT ) *DeltaX = 3;
+    if ( Keys_Held & KEY_CPAD_LEFT ) *DeltaX = CPadMinDelta;
+    if ( Keys_Held & KEY_CPAD_RIGHT ) *DeltaX = CPadMaxDelta;
     
-    if ( Keys_Held & KEY_CPAD_UP ) *DeltaY = -3;
-    if ( Keys_Held & KEY_CPAD_DOWN ) *DeltaY = 3;
+    if ( Keys_Held & KEY_CPAD_UP ) *DeltaY = CPadMinDelta;
+    if ( Keys_Held & KEY_CPAD_DOWN ) *DeltaY = CPadMaxDelta;
     
     return ( *DeltaX != 0 ) || ( *DeltaY != 0 ) ? trueblnr : falseblnr;
 }
@@ -2390,39 +2397,77 @@ LOCALFUNC blnr GetTouchDelta( int* DeltaX, int* DeltaY ) {
     return falseblnr;
 }
 
+LOCALFUNC blnr GetTouchAbsolute( int* ABSX, int* ABSY ) {
+    float MouseX = 0;
+    float MouseY = 0;
+    touchPosition TP;
+    
+    if ( Keys_Held & KEY_TOUCH ) {
+        touchRead( &TP );
+        
+        MouseX = ( ( float ) TP.px / ( float ) MySubScreenWidth ) * ( float ) vMacScreenWidth;
+        MouseY = ( ( float ) TP.py / ( float ) MySubScreenHeight ) * ( float ) vMacScreenHeight;
+        
+        if ( MouseX < 0.0 ) MouseX = 0.0;
+        if ( MouseX >= ( float ) vMacScreenWidth ) MouseX = ( float ) vMacScreenWidth - 1.0;
+        
+        if ( MouseY < 0.0 ) MouseY = 0.0;
+        if ( MouseY >= ( float ) vMacScreenWidth ) MouseY = ( float ) vMacScreenHeight - 1.0;
+        
+        *ABSX = ( int ) MouseX;
+        *ABSY = ( int ) MouseY;
+        
+        return trueblnr;
+    }
+    
+    return falseblnr;
+}
+
 LOCALFUNC blnr IsMouseKeyDown( void ) {
     return ( Keys_Held & KEY_L ) || ( Keys_Held & KEY_R ) ? trueblnr : falseblnr;
 }
 
 LOCALPROC HandleMouseMovement( void ) {
-    int MouseDeltaX = 0;
-    int MouseDeltaY = 0;
+    blnr IsDelta = falseblnr;
+    int X = 0;
+    int Y = 0;
     
-    /*
-     * Mouse input order:
-     *
-     * Touchscreen -> CPad -> CPadPro (TODO)
-     */
-    if ( KeyboardIsActive == falseblnr && GetTouchDelta( &MouseDeltaX, &MouseDeltaY ) ) {
-        HaveMouseMotion = trueblnr;
-    }
-    else if ( GetCPadDelta( &MouseDeltaX, &MouseDeltaY ) ) {
-        HaveMouseMotion = trueblnr;
+    if ( KeyboardIsActive == trueblnr ) {
+        /* Keyboard is active, only accept mouse input from the CPad */
+        HaveMouseMotion = GetCPadDelta( &X, &Y );
+        IsDelta = trueblnr;
     } else {
-        HaveMouseMotion = falseblnr;
+        if( IsMouseAbsolute == trueblnr ) {
+            HaveMouseMotion = GetTouchAbsolute( &X, &Y );
+            IsDelta = falseblnr;
+        } else {
+            HaveMouseMotion = GetTouchDelta( &X, &Y );
+            IsDelta = trueblnr;
+        }
+        
+        /* If no touchscreen activity, try the circle pad */
+        if ( HaveMouseMotion == falseblnr ) {
+            HaveMouseMotion = GetCPadDelta( &X, &Y );
+            IsDelta = trueblnr;
+        }
     }
     
-    if ( HaveMouseMotion ) {
-        /* Clamp the range of deltas so that the mouse doesn't go too fast/crazy */
-        if ( MouseDeltaX < -10 ) MouseDeltaX = -10;
-        if ( MouseDeltaX > 10 ) MouseDeltaX = 10;
+    /* Clamp deltas and set mouse movement */
+    if ( HaveMouseMotion == trueblnr ) {
+        if ( IsDelta == falseblnr ) {
+            MyMousePositionSet( X, Y );
+        }
+        else {
+            if ( X < MouseMinDelta ) X = MouseMinDelta;
+            if ( X > MouseMaxDelta ) X = MouseMaxDelta;
+            
+            if ( Y < MouseMinDelta ) Y = MouseMinDelta;
+            if ( Y > MouseMaxDelta ) Y = MouseMaxDelta;
+            
+            MyMousePositionSetDelta( X, Y );
+        }
         
-        if ( MouseDeltaY < -10 ) MouseDeltaY = -10;
-        if ( MouseDeltaY > 10 ) MouseDeltaY = 10;
-        
-        MyMousePositionSetDelta( MouseDeltaX, MouseDeltaY );
-        
-        //printf( "dx: %d dy: %d\n", MouseDeltaX, MouseDeltaY );
+        HaveMouseMotion = falseblnr;
     }
 }
 
@@ -2588,6 +2633,16 @@ LOCALPROC Handle3FingerSalute( void ) {
         RequestMacOff = trueblnr;
 }
 
+/* Toggle between absolute/relative mouse modes */
+LOCALPROC HandleMouseToggle( void ) {
+    if ( Keys_Down & KEY_A ) {
+        if ( IsMouseAbsolute == falseblnr ) MacMsg( "Mouse mode changed", "Absolute mouse movement enabled", falseblnr );
+        else MacMsg( "Mouse mode changed", "Relative mouse mode enabled", falseblnr );
+        
+        IsMouseAbsolute = ! IsMouseAbsolute;
+    }
+}
+
 LOCALPROC HandleTheEvent( void ) {
     if ( aptMainLoop( ) ) {
         hidScanInput( );
@@ -2601,6 +2656,7 @@ LOCALPROC HandleTheEvent( void ) {
         
         Handle3FingerSalute( );
         HandleControlMode( );
+        HandleMouseToggle( );
         
         if ( KeyboardIsActive )
             Keyboard_Update( );
