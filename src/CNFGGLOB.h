@@ -70,7 +70,7 @@ typedef si5b si5r;
 
 #define dbglog_HAVE 0
 
-#define NumDrives 6
+#define NumDrives 9
 #define IncludeSonyRawMode 0
 #define IncludeSonyGetName 0
 #define IncludeSonyNew 0
