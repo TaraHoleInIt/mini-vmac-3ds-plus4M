@@ -30,7 +30,7 @@
 /* Uncomment to use debug console as a texture.
  * Press and hold X to see it.
  */
-/*#define DEBUG_CONSOLE*/
+/* #define DEBUG_CONSOLE */
 
 u32 Keys_Down = 0;
 u32 Keys_Up = 0;
@@ -743,8 +743,8 @@ int Video_Init( void ) {
     Video_SetupShader( );
     Video_CreateTextures( );
     
-    Mtx_OrthoTilt( &ProjectionMain, 0.0, 400.0, 240.0, 0.0, 0.0, 1.0 );
-    Mtx_OrthoTilt( &ProjectionSub, 0.0, 320.0, 240.0, 0.0, 0.0, 1.0 );
+    Mtx_OrthoTilt( &ProjectionMain, 0.0, 400.0, 240.0, 0.0, 0.0, 1.0, true );
+    Mtx_OrthoTilt( &ProjectionSub, 0.0, 320.0, 240.0, 0.0, 0.0, 1.0, true );
     
     C3D_DepthTest( true, GPU_GEQUAL, GPU_WRITE_ALL );
     
@@ -3008,7 +3008,7 @@ LOCALPROC UnallocMyMemory(void)
 }
 
 LOCALPROC DoN3DSSpeedup( void ) {
-    u8 IsNew3DS = 0;
+    bool IsNew3DS = 0;
     
     APT_CheckNew3DS( &IsNew3DS );
     
