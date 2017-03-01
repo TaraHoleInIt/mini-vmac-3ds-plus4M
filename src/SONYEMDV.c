@@ -879,33 +879,14 @@ struct MyDriverDat_R {
 typedef struct MyDriverDat_R MyDriverDat_R;
 #endif
 
-
-#if CurEmMd <= kEmMd_Twiggy
-
-#define SonyVarsPtr 0x0128 /* TwiggyVars, actually */
-
-#if CurEmMd <= kEmMd_Twig43
-#define MinSonVarsSize 0x000000FA
-#define FirstDriveVarsOffset 0x004A
-#define EachDriveVarsSize 0x0042
-#else
-#define MinSonVarsSize 0x000000E6
-#define FirstDriveVarsOffset 0x004C
-#define EachDriveVarsSize 0x002E
-#endif
-
-#else
-
 #define SonyVarsPtr 0x0134
 
-#define FirstDriveVarsOffset 0x004A
-#define EachDriveVarsSize 0x0042
+#define FirstDriveVarsOffset 74
+#define EachDriveVarsSize 66
 #if CurEmMd <= kEmMd_128K
 #define MinSonVarsSize 0x000000FA
 #else
 #define MinSonVarsSize 0x00000310
-#endif
-
 #endif
 
 #define kcom_checkval 0x841339E2
@@ -938,17 +919,6 @@ LOCALFUNC tMacErr Sony_Mount(CPTR p)
 	} else if (get_vm_byte(dvl + kDiskInPlace) == 0x00) {
 		ui5b L = ImageDataSize[i] >> 9; /* block count */
 
-#if CurEmMd <= kEmMd_Twiggy
-		if (L == 1702) {
-			put_vm_byte(dvl + kTwoSideFmt, 0xFF);
-				/* Drive i Single Format */
-			put_vm_byte(dvl + kNewIntf, 0x00);
-				/* Drive i doesn't use new interface */
-			put_vm_word(dvl + kQType, 0x00); /* Drive Type */
-			put_vm_word(dvl + kDriveErrs, 0x0000);
-				/* Drive i has no errors */
-		} else
-#else
 		if ((L == 800)
 #if CurEmMd > kEmMd_128K
 			|| (L == 1600)
@@ -974,18 +944,12 @@ LOCALFUNC tMacErr Sony_Mount(CPTR p)
 			put_vm_word(dvl + kQType, 0x00); /* Drive Type */
 			put_vm_word(dvl + kDriveErrs, 0x0000);
 				/* Drive i has no errors */
-		} else
-#endif
-		{
+		} else {
 			put_vm_word(dvl + kQRefNum, 0xFFFE);  /* Driver */
 			put_vm_word(dvl + kQType, 0x01); /* Drive Type */
 			put_vm_word(dvl + kQDrvSz , L);
 			put_vm_word(dvl + kQDrvSz2, L >> 16);
 		}
-
-#if CurEmMd <= kEmMd_Twiggy
-		put_vm_word(dvl + kQFSID, 0x00); /* kQFSID must be 0 for 4.3T */
-#endif
 
 		put_vm_byte(dvl + kWriteProt, data >> 16);
 		put_vm_byte(dvl + kDiskInPlace, 0x01); /* Drive Disk Inserted */
@@ -1063,14 +1027,10 @@ LOCALFUNC tMacErr Sony_Prime(CPTR p)
 
 	if (0 == dvl) {
 		result = mnvm_nsDrvErr;
-	} else
-#if CurEmMd >= kEmMd_Twiggy
-	if (0xA002 != (IOTrap & 0xF0FE)) {
+	} else if (0xA002 != (IOTrap & 0xF0FE)) {
 		/* not read (0xA002) or write (0xA003) */
 		result = mnvm_controlErr;
-	} else
-#endif
-	{
+	} else {
 		blnr IsWrite = (0 != (IOTrap & 0x0001));
 		ui3b DiskInPlaceV = get_vm_byte(dvl + kDiskInPlace);
 
@@ -1152,9 +1112,6 @@ LOCALFUNC tMacErr Sony_Prime(CPTR p)
 			|| (0 != (Sony_Count & 0x1FF)))
 		{
 			/* only whole blocks allowed */
-#if ExtraAbnormalReports
-			ReportAbnormal("not blockwise in Sony_Prime");
-#endif
 			result = mnvm_paramErr;
 		} else if (IsWrite && (get_vm_byte(dvl + kWriteProt) != 0)) {
 			result = mnvm_wPrErr;

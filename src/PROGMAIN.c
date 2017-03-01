@@ -154,7 +154,9 @@ LOCALPROC SubTickTaskEnd(void)
 LOCALPROC SixtiethSecondNotify(void)
 {
 #if dbglog_HAVE && 0
-	dbglog_WriteNote("begin new Sixtieth");
+	dbglog_StartLine();
+	dbglog_writeCStr("begin new Sixtieth");
+	dbglog_writeReturn();
 #endif
 	Mouse_Update();
 	InterruptReset_Update();
@@ -187,7 +189,9 @@ LOCALPROC SixtiethEndNotify(void)
 	Mouse_EndTickNotify();
 	Screen_EndTickNotify();
 #if dbglog_HAVE && 0
-	dbglog_WriteNote("end Sixtieth");
+	dbglog_StartLine();
+	dbglog_writeCStr("end Sixtieth");
+	dbglog_writeReturn();
 #endif
 }
 

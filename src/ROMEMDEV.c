@@ -184,11 +184,7 @@ LOCALVAR const ui3b my_disk_icon[] = {
 };
 #endif
 
-#if CurEmMd <= kEmMd_Twig43
-#define Sony_DriverBase 0x1836
-#elif CurEmMd <= kEmMd_Twiggy
-#define Sony_DriverBase 0x16E4
-#elif CurEmMd <= kEmMd_128K
+#if CurEmMd <= kEmMd_128K
 #define Sony_DriverBase 0x1690
 #elif CurEmMd <= kEmMd_Plus
 #define Sony_DriverBase 0x17D30
@@ -206,16 +202,6 @@ LOCALPROC Sony_Install(void)
 	ui3p pto = Sony_DriverBase + ROM;
 
 	MyMoveBytes((anyp)sony_driver, (anyp)pto, sizeof(sony_driver));
-#if CurEmMd <= kEmMd_Twiggy
-	do_put_mem_long(pto + 0x14, 0x4469736B);
-		/* 'Disk' instead of 'Sony' */
-#if CurEmMd <= kEmMd_Twig43
-	do_put_mem_word(pto + 0xEA, 0x0C8A);
-#else
-	do_put_mem_word(pto + 0xEA, 0x0B74);
-#endif
-#endif
-
 	pto += sizeof(sony_driver);
 
 	do_put_mem_word(pto, kcom_callcheck);
@@ -241,36 +227,27 @@ LOCALPROC Sony_Install(void)
 }
 #endif
 
-LOCALFUNC ui5r Calc_Checksum(void)
+LOCALFUNC blnr Check_Checksum(ui5r CheckSum1)
 {
 	long int i;
-	ui5b CheckSum = 0;
+	ui5b CheckSum2 = 0;
 	ui3p p = 4 + ROM;
 
 	for (i = (kCheckSumRom_Size - 4) >> 1; --i >= 0; ) {
-		CheckSum += do_get_mem_word(p);
+		CheckSum2 += do_get_mem_word(p);
 		p += 2;
 	}
-
-	return CheckSum;
+	return (CheckSum1 == CheckSum2);
 }
 
 GLOBALFUNC blnr ROM_Init(void)
 {
-	ui5r CheckSum = Calc_Checksum();
+	ui5r CheckSum = do_get_mem_long(ROM);
 
-#if CurEmMd >= kEmMd_Twiggy
-	if (CheckSum != do_get_mem_long(ROM)) {
+	if (! Check_Checksum(CheckSum)) {
 		WarnMsgCorruptedROM();
 	} else
-#endif
-#if CurEmMd <= kEmMd_Twig43
-	if (CheckSum == 0x27F4E04B) {
-	} else
-#elif CurEmMd <= kEmMd_Twiggy
-	if (CheckSum == 0x2884371D) {
-	} else
-#elif CurEmMd <= kEmMd_128K
+#if CurEmMd <= kEmMd_128K
 	if (CheckSum == 0x28BA61CE) {
 	} else
 	if (CheckSum == 0x28BA4E50) {
@@ -316,16 +293,12 @@ GLOBALFUNC blnr ROM_Init(void)
 	*/
 
 /* skip the rom checksum */
-#if CurEmMd <= kEmMd_Twig43
-	/* no checksum code */
-#elif CurEmMd <= kEmMd_Twiggy
-	do_put_mem_word(0x136 + ROM, 0x6004);
-#elif CurEmMd <= kEmMd_128K
-	do_put_mem_word(0xE2 + ROM, 0x6004);
+#if CurEmMd <= kEmMd_128K
+	do_put_mem_word(226 + ROM, 0x6004);
 #elif CurEmMd <= kEmMd_Plus
-	do_put_mem_word(0xD7A + ROM, 0x6022);
+	do_put_mem_word(3450 + ROM, 0x6022);
 #elif CurEmMd <= kEmMd_Classic
-	do_put_mem_word(0x1C68 + ROM, 0x6008);
+	do_put_mem_word(7272 + ROM, 0x6008);
 #elif (CurEmMd == kEmMd_II) || (CurEmMd == kEmMd_IIx)
 	do_put_mem_word(0x2AB0 + ROM, 0x6008);
 #endif

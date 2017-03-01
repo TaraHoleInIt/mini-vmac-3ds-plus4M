@@ -18,7 +18,6 @@
 
 
 #define RomFileName "vMac.ROM"
-#define dbglog_buflnsz 18
 #define EnableDragDrop 1
 #define EnableAltKeysMode 0
 #define SwapCommandControl 0
@@ -41,7 +40,7 @@
 
 #define NeedIntlChars 0
 #define kStrAppName "Mini vMac"
-#define kAppVariationStr "minivmac-3ds-plus4M"
+#define kAppVariationStr "minivmac-3ds-plus4M 3.4.1"
 #define kStrCopyrightYear "2016"
 #define kMaintainerName "Tara Keeling"
 #define kStrHomePage "http://www.gryphel.com/c/minivmac/"

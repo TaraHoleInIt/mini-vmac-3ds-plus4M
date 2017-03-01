@@ -16,7 +16,7 @@
 
 /*
  * Operating system glue for the Nintendo 3DS
- * 2016 Tara Keeling
+ * 2016-2017 Tara Keeling
 */
 
 #include "CNFGRAPI.h"

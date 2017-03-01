@@ -232,7 +232,7 @@ GLOBALFUNC blnr RTC_Init(void)
 #if 0 == vMacScreenDepth
 	RTC.PARAMRAM[0x48] = 0x80;
 #else
-	RTC.PARAMRAM[0x48] = 0x81;
+	RTC.PARAMRAM[0x48] = 0x80;
 		/* 0x81 doesn't quite work right at boot */
 			/* no, it seems to work now (?) */
 #endif

@@ -2656,7 +2656,9 @@ LOCALPROCUSEDONCE DoCodeDivU(void)
 #endif
 		Exception(5);
 #if m68k_logExceptions
-		dbglog_WriteNote("*** zero devide exception");
+		dbglog_StartLine();
+		dbglog_writeCStr("*** zero devide exception");
+		dbglog_writeReturn();
 #endif
 	} else {
 		ui5b newv = (ui5b)dstvalue / (ui5b)(ui4b)srcvalue;
@@ -2695,7 +2697,9 @@ LOCALPROCUSEDONCE DoCodeDivS(void)
 #endif
 		Exception(5);
 #if m68k_logExceptions
-		dbglog_WriteNote("*** zero devide exception");
+		dbglog_StartLine();
+		dbglog_writeCStr("*** zero devide exception");
+		dbglog_writeReturn();
 #endif
 	} else {
 		si5b newv = (si5b)dstvalue / (si5b)(si4b)srcvalue;
@@ -3872,7 +3876,9 @@ LOCALPROC DoDivL(void)
 	if (src == 0) {
 		Exception(5);
 #if m68k_logExceptions
-		dbglog_WriteNote("*** zero devide exception");
+		dbglog_StartLine();
+		dbglog_writeCStr("*** zero devide exception");
+		dbglog_writeReturn();
 #endif
 		return;
 	}

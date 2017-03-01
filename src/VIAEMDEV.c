@@ -692,14 +692,18 @@ GLOBALPROC VIA1_DoTimer1Check(void)
 #endif
 					VIA1_SetInterruptFlag(kIntT1);
 #if VIA1_dolog && 1
-					dbglog_WriteNote("VIA1 Timer 1 Interrupt");
+					dbglog_StartLine();
+					dbglog_writeCStr("VIA1 Timer 1 Interrupt");
+					dbglog_writeReturn();
 #endif
 				} else {
 					if (VIA1_T1_Active == 1) {
 						VIA1_T1_Active = 0;
 						VIA1_SetInterruptFlag(kIntT1);
 #if VIA1_dolog && 1
-						dbglog_WriteNote("VIA1 Timer 1 Interrupt");
+						dbglog_StartLine();
+						dbglog_writeCStr("VIA1 Timer 1 Interrupt");
+						dbglog_writeReturn();
 #endif
 					}
 				}
@@ -785,7 +789,9 @@ GLOBALPROC VIA1_DoTimer2Check(void)
 				VIA1_T2_Active = 0;
 				VIA1_SetInterruptFlag(kIntT2);
 #if VIA1_dolog && 1
-				dbglog_WriteNote("VIA1 Timer 2 Interrupt");
+				dbglog_StartLine();
+				dbglog_writeCStr("VIA1 Timer 2 Interrupt");
+				dbglog_writeReturn();
 #endif
 			} else {
 				ui5b NewTimer;
