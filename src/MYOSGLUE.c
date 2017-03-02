@@ -30,7 +30,7 @@
 /* Uncomment to use debug console as a texture.
  * Press and hold X to see it.
  */
-/* #define DEBUG_CONSOLE */
+#define DEBUG_CONSOLE
 
 u32 Keys_Down = 0;
 u32 Keys_Up = 0;
@@ -44,7 +44,7 @@ u32 Keys_Held = 0;
 
 #if dbglog_HAVE
 
-#define dbglog_ToStdErr 0
+#define dbglog_ToStdErr 1
 
 #if ! dbglog_ToStdErr
 LOCALVAR FILE *dbglog_File = NULL;
@@ -326,7 +326,7 @@ void Convert1BPP( u8* Src, u32* Dest, int Size ) {
     };
     u8 In = 0;
     
-    while ( Size-= 8 ) {
+    while ( Size-= 8 > 0 ) {
         In = *Src++;
         
         *Dest++ = HNibble2Pixels[ ( In >> 6 ) & 0x03 ];
@@ -406,52 +406,36 @@ void MakeTable4BPP( u16* Reds, u16* Greens, u16* Blues, int Size ) {
     }
 }
 
-void Video_UpdateTexture( u8* Src, int Size, INFB_FORMAT Format ) {
-    u16* TempBuffer = ( u16* ) TempTextureBuffer;
-    
-    if ( TempTextureBuffer ) {
-        ConvertFBTo565( Src, ( u16* ) TempBuffer, Size, Format );
-        GSPGPU_FlushDataCache( TempBuffer, 512 * 512 * 2 );
-        
-        C3D_SafeDisplayTransfer( ( u32* ) TempBuffer, GX_BUFFER_DIM( 512, 512 ), ( u32* ) FBTexture.data, GX_BUFFER_DIM( 512, 512 ), TEXTURE_TRANSFER_FLAGS );
-        //gspWaitForPPF( );
-    }
-}
-
-void Video_UpdateTexture2( u8* Src, int Size, INFB_FORMAT Format, int StartY, int EndY ) {
-    u16* TempBuffer = ( u16* ) TempTextureBuffer;
-    
-    switch ( Format ) {
-        case INFB_FORMAT_1BPP: {
-            Src+= ( StartY * ( vMacScreenWidth / 8 ) );
-            TempBuffer+= ( StartY * 512 );
-            
-            Size = ( EndY - StartY ) * vMacScreenWidth;
-            break;
-        }
-        case INFB_FORMAT_4BPP: {
-            Src+= ( StartY * ( vMacScreenWidth / 2 ) );
-            TempBuffer+= ( StartY * 512 );
-            
-            Size = ( ( EndY - StartY ) * vMacScreenWidth );
-            break;
-        }
-        case INFB_FORMAT_8BPP: {
-            Src+= ( StartY * vMacScreenWidth );
-            TempBuffer+= ( StartY * 512 );
-            
-            Size = ( EndY - StartY ) * vMacScreenWidth;
-            break;
-        }
-        default: break;
-    };
-    
-    if ( TempTextureBuffer ) {
-        ConvertFBTo565( Src, ( u16* ) TempBuffer, Size, Format );
-        GSPGPU_FlushDataCache( TempTextureBuffer, 512 * 512 * 2 );
-        
-        C3D_SafeDisplayTransfer( ( u32* ) TempTextureBuffer, GX_BUFFER_DIM( 512, 512 ), ( u32* ) FBTexture.data, GX_BUFFER_DIM( 512, 512 ), TEXTURE_TRANSFER_FLAGS );
-    }
+void Video_UpdateTexture( u8* Src, INFB_FORMAT Format, int Left, int Right, int Top, int Bottom ) {
+	u16* TempBuffer = ( u16 ) TempTextureBuffer;
+	int Value = 0;
+	u8* Ptr = NULL;
+	
+	/* Make sure Left and Right are on an 8 pixel boundary */
+	Left = ( Left & ~0x07 );
+	Right = ( ( Right + 8 ) & ~0x07 );
+	
+	if ( Left < 0 ) Left = 0;
+	if ( Left >= vMacScreenWidth ) Left = vMacScreenWidth;
+	
+	if ( Right < 0 ) Right = 0;
+	if ( Right >= vMacScreenWidth ) Right = vMacScreenWidth;
+	
+	if ( Top < 0 ) Top = 0;
+	if ( Top >= vMacScreenHeight ) Top = vMacScreenHeight;
+	
+	if ( Bottom < 0 ) Bottom = 0;
+	if ( Bottom >= vMacScreenHeight ) Bottom = vMacScreenHeight;
+	
+	for ( ; Top <= Bottom; Top++ ) {
+		Ptr = Src + ( Top * ( vMacScreenWidth / 8 ) ) + ( Left / 8 );
+		TempBuffer = TempTextureBuffer + ( 512 * Top * 2 ) + ( Left * 2 );
+		
+		ConvertFBTo565( Ptr, TempBuffer, ( Right - Left ), Format );
+	}
+	
+	GSPGPU_FlushDataCache( TempTextureBuffer, 512 * 512 * 2 );
+	C3D_SafeDisplayTransfer( ( u32* ) TempTextureBuffer, GX_BUFFER_DIM( 512, 512 ), ( u32* ) FBTexture.data, GX_BUFFER_DIM( 512, 512 ), TEXTURE_TRANSFER_FLAGS );
 }
 
 void DrawTexture( C3D_Tex* Texture, int Width, int Height, float X, float Y, float ScaleX, float ScaleY ) {
@@ -1123,10 +1107,8 @@ LOCALPROC HaveChangedScreenBuff(ui4r top, ui4r left,
 	ui4r bottom, ui4r right)
 {
 #if vMacScreenDepth < 2
-    //Video_UpdateTexture( ( u8* ) GetCurDrawBuff( ), vMacScreenWidth * vMacScreenHeight * 8, INFB_FORMAT_1BPP );
-    Video_UpdateTexture2( ( u8* ) GetCurDrawBuff( ), vMacScreenWidth * ( bottom - top ) * 8, INFB_FORMAT_1BPP, top, bottom );
+	Video_UpdateTexture( ( u8* ) GetCurDrawBuff( ), INFB_FORMAT_1BPP, left, right, top, bottom );
 #endif
-    //printf( "%s took %dms\n", __FUNCTION__, ( int ) ( B - A ) );
 }
 
 LOCALPROC MyDrawChangesAndClear(void)
@@ -2589,8 +2571,8 @@ extern int FramesTooSlow;
 extern int FramesVideoDisabled;
 
 LOCALPROC DrawSubScreen( void ) {
-    float SubScaleX = 0.625f;//( ( float ) MySubScreenWidth ) / 512.0f;
-    float SubScaleY = 0.70f;//( ( float ) MySubScreenHeight ) / 512.0f;
+    float SubScaleX = ( ( float ) MySubScreenWidth ) / ( ( float ) vMacScreenWidth );
+    float SubScaleY = ( ( float ) MySubScreenHeight ) / ( ( float ) vMacScreenHeight );
     
     /* Always use linear texture filtering for scaled version of main screen. */
     C3D_TexSetFilter( &FBTexture, GPU_LINEAR, GPU_LINEAR );
@@ -2606,9 +2588,9 @@ LOCALPROC DrawSubScreen( void ) {
         DebugConsoleUpdate( );
     
     if ( Keys_Held & KEY_X ) {
-        printf( "\x1b[2J" );
-        printf( "Frames where not fast enough: %d\n", FramesTooSlow );
-        printf( "Frames where video was disabled: %d\n", FramesVideoDisabled );
+        //printf( "\x1b[2J" );
+        //printf( "Frames where not fast enough: %d\n", FramesTooSlow );
+        //printf( "Frames where video was disabled: %d\n", FramesVideoDisabled );
         
         DebugConsoleDraw( );
     }
@@ -2630,12 +2612,14 @@ LOCALPROC HandleControlMode( void ) {
 
 LOCALPROC Handle3FingerSalute( void ) {
     if ( ( Keys_Held & KEY_L ) && ( Keys_Held & KEY_R ) && ( Keys_Held & KEY_START ) )
-        RequestMacOff = trueblnr;
+   		ForceMacOff = trueblnr;
+    	
+    //    RequestMacOff = trueblnr;
 }
 
 /* Toggle between absolute/relative mouse modes */
 LOCALPROC HandleMouseToggle( void ) {
-    if ( Keys_Down & KEY_A ) {
+    if (  ( Keys_Held & KEY_L ) && ( Keys_Held & KEY_R ) && ( Keys_Held & KEY_A ) ) {
         if ( IsMouseAbsolute == falseblnr ) MacMsg( "Mouse mode changed", "Absolute mouse movement enabled", falseblnr );
         else MacMsg( "Mouse mode changed", "Relative mouse mode enabled", falseblnr );
         
@@ -2667,6 +2651,10 @@ LOCALPROC HandleTheEvent( void ) {
         /* Only switch to keyboard mode if the graphics were loaded */
         if ( ( Keys_Down & KEY_Y ) && HaveKeyboardLoaded == trueblnr )
             Keyboard_Toggle( );
+            
+        /* Pressing X should dismiss all emulator messages */
+        if ( ( Keys_Down & KEY_X ) )
+        	MacMsgDisplayOff( );
         
         /* Handle the DPAD arrow keys regardless of if the keyboard is shown */
         Keyboard_HandleDPAD( );
