@@ -1,3 +1,6 @@
+## Updated version: https://github.com/TaraHoleInIt/minivmac-3ds
+## GBATemp thread: http://gbatemp.net/threads/mini-vmac-for-3ds.439119/
+
 # Mini vMac 3DS Port
 
 Macintosh Plus with 4MB variant  
